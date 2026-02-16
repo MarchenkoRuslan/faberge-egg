@@ -22,6 +22,12 @@ class Settings:
     PAYKILLA_SUCCESS_URL: str = os.getenv("PAYKILLA_SUCCESS_URL", "http://localhost:3000/success")
     PAYKILLA_CANCEL_URL: str = os.getenv("PAYKILLA_CANCEL_URL", "http://localhost:3000/cancel")
     MIN_FRACTIONS: int = int(os.getenv("MIN_FRACTIONS", "1"))
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
 
 
 settings = Settings()
+
+# Validate critical settings
+if settings.JWT_SECRET == "change-me-in-production":
+    import warnings
+    warnings.warn("JWT_SECRET is using default value. Change it in production!", UserWarning)

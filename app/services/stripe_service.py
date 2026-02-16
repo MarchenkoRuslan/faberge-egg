@@ -5,8 +5,8 @@ def create_checkout_session(
     lot_name: str,
     success_url: str,
     cancel_url: str,
-) -> str:
-    """Create Stripe Checkout Session and return checkout URL."""
+) -> tuple[str, str]:
+    """Create Stripe Checkout Session and return (checkout URL, session ID)."""
     import stripe
     from app.config import settings
 
@@ -32,4 +32,4 @@ def create_checkout_session(
         cancel_url=cancel_url,
         metadata={"order_id": str(order_id)},
     )
-    return session.url
+    return session.url, session.id

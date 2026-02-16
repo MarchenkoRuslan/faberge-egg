@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -49,7 +50,9 @@ def create_order(
         )
 
     # Price in cents (special price €0.03 -> 3 cents per fraction)
-    amount_eur_cents = int(lot.price_special_eur * 100) * body.fraction_count
+    # Use Decimal for precise calculation
+    price_special_decimal = Decimal(str(lot.price_special_eur))
+    amount_eur_cents = int(price_special_decimal * Decimal("100") * Decimal(str(body.fraction_count)))
 
     order = Order(
         user_id=current_user.id,
@@ -72,9 +75,9 @@ def create_order(
 
     checkout_url = None
     session_id = None
-    if body.payment_method == "stripe":
-        try:
-            checkout_url = stripe_service.create_checkout_session(
+    try:
+        if body.payment_method == "stripe":
+            result = stripe_service.create_checkout_session(
                 order_id=order.id,
                 amount_eur_cents=amount_eur_cents,
                 fraction_count=body.fraction_count,
@@ -82,18 +85,40 @@ def create_order(
                 success_url=success_url,
                 cancel_url=cancel_url,
             )
-        except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    elif body.payment_method == "paykilla":
-        try:
+            if isinstance(result, tuple):
+                checkout_url, session_id = result
+            else:
+                checkout_url = result
+        elif body.payment_method == "paykilla":
             checkout_url = paykilla_service.create_payment(
                 order_id=order.id,
                 amount_eur_cents=amount_eur_cents,
                 success_url=success_url,
                 cancel_url=cancel_url,
             )
-        except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported payment method: {body.payment_method}",
+            )
+
+        if checkout_url is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create checkout session",
+            )
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create checkout session",
+        )
 
     return OrderCreateResponse(
         order_id=order.id,
