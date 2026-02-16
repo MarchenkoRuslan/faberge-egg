@@ -1,11 +1,17 @@
+from enum import Enum
+
 from pydantic import BaseModel
-from typing import Literal
+
+
+class PaymentMethod(str, Enum):
+    STRIPE = "stripe"
+    PAYKILLA = "paykilla"
 
 
 class OrderCreateRequest(BaseModel):
     lot_id: int
     fraction_count: int
-    payment_method: Literal["stripe", "paykilla"]
+    payment_method: PaymentMethod
     return_url: str | None = None
     cancel_url: str | None = None
 
@@ -28,7 +34,7 @@ class OrderCreateResponse(BaseModel):
     order_id: int
     checkout_url: str | None = None
     session_id: str | None = None
-    payment_method: str
+    payment_method: PaymentMethod
 
 
 class OrderResponse(BaseModel):
@@ -36,7 +42,7 @@ class OrderResponse(BaseModel):
     lot_id: int
     fraction_count: int
     amount_eur_cents: int
-    payment_method: str
+    payment_method: PaymentMethod
     status: str
     created_at: str
 
@@ -48,3 +54,8 @@ class OrderStatusResponse(BaseModel):
     status: str
     fraction_count: int
     amount_eur_cents: int
+
+
+class PaymentMethodsResponse(BaseModel):
+    available_methods: list[PaymentMethod]
+    enabled_methods: list[PaymentMethod]

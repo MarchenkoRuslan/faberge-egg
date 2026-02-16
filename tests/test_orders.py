@@ -223,7 +223,7 @@ def test_create_order_unsupported_payment_method(client, test_lot, auth_headers)
     )
     
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-    assert any(err.get("type") == "literal_error" for err in response.json()["detail"])
+    assert any(err.get("type") in {"literal_error", "enum"} for err in response.json()["detail"])
 
 
 def test_get_my_orders_success(client, test_user, test_lot, auth_headers, db):
@@ -360,3 +360,34 @@ def test_get_order_status_unauthorized(client, test_user, test_lot, db):
     
     response = client.get(f"/api/orders/{order.id}/status")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_get_payment_methods(client):
+    """Payment methods endpoint returns available and enabled methods."""
+    response = client.get("/api/orders/payment-methods")
+    assert response.status_code == status.HTTP_200_OK
+
+    data = response.json()
+    assert set(data["available_methods"]) == {"stripe", "paykilla"}
+    assert set(data["enabled_methods"]).issubset({"stripe", "paykilla"})
+
+
+def test_create_order_uses_gateway_default_urls(client, test_lot, auth_headers):
+    """Order creation uses gateway defaults when custom URLs are absent."""
+    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+        mock_stripe.return_value.url = "https://checkout.stripe.com/test"
+        mock_stripe.return_value.id = "cs_test_456"
+
+        response = client.post(
+            "/api/orders",
+            json={
+                "lot_id": test_lot.id,
+                "fraction_count": 100,
+                "payment_method": "stripe",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        call_kwargs = mock_stripe.call_args.kwargs
+        assert "order_id=" in call_kwargs["success_url"]
