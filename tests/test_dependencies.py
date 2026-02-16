@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
 
-import pytest
 from fastapi import status
 from jose import jwt
 
@@ -13,7 +12,7 @@ def test_get_current_user_success(client, test_user, db):
     """Test successful user retrieval with valid token."""
     # Create a valid token
     token = jwt.encode(
-        {"sub": test_user.id, "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+        {"sub": str(test_user.id), "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
         settings.JWT_SECRET,
         algorithm=settings.JWT_ALGORITHM,
     )
@@ -53,7 +52,7 @@ def test_get_current_user_expired_token(client, test_user):
     # Create an expired token
     expired_token = jwt.encode(
         {
-            "sub": test_user.id,
+            "sub": str(test_user.id),
             "exp": datetime.now(timezone.utc) - timedelta(hours=1),  # Expired
         },
         settings.JWT_SECRET,
@@ -72,7 +71,7 @@ def test_get_current_user_nonexistent_user(client, db):
     # Create token for user that doesn't exist
     fake_user_id = 99999
     token = jwt.encode(
-        {"sub": fake_user_id, "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+        {"sub": str(fake_user_id), "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
         settings.JWT_SECRET,
         algorithm=settings.JWT_ALGORITHM,
     )
@@ -103,16 +102,7 @@ def test_get_current_user_optional_invalid_token(client, db):
 
 def test_get_current_user_raises_exception(client):
     """Test that get_current_user raises HTTPException when user is None."""
-    from fastapi import Depends
-    from fastapi.security import HTTPAuthorizationCredentials
-    
-    # This should raise HTTPException
-    with pytest.raises(Exception):  # HTTPException is raised
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="invalid")
-        # We can't easily test this without the full dependency chain,
-        # but we can verify the endpoint behavior
-        pass
-    
-    # Test via endpoint instead
+    # Direct unit-test path is not meaningful here because get_current_user
+    # relies on dependency injection. Verify via endpoint behavior instead.
     response = client.get("/api/orders/me")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED

@@ -129,7 +129,7 @@ def test_login_token_valid(client, test_user):
     # Decode token
     payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
     assert "sub" in payload
-    assert payload["sub"] == test_user.id
+    assert payload["sub"] == str(test_user.id)
     assert "exp" in payload
 
 

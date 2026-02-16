@@ -1,8 +1,15 @@
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 
-class LotListResponse(BaseModel):
+class _LotBaseResponse(BaseModel):
+    @field_serializer("price_special_eur", "price_nominal_eur", check_fields=False)
+    def serialize_price(self, value: Decimal) -> str:
+        normalized = value.normalize()
+        return format(normalized, "f")
+
+
+class LotListResponse(_LotBaseResponse):
     id: int
     name: str
     slug: str
@@ -17,7 +24,7 @@ class LotListResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class LotDetailResponse(BaseModel):
+class LotDetailResponse(_LotBaseResponse):
     id: int
     name: str
     slug: str

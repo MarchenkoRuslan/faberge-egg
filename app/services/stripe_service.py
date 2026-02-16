@@ -1,3 +1,5 @@
+import stripe
+
 def create_checkout_session(
     order_id: int,
     amount_eur_cents: int,
@@ -7,7 +9,6 @@ def create_checkout_session(
     cancel_url: str,
 ) -> tuple[str, str]:
     """Create Stripe Checkout Session and return (checkout URL, session ID)."""
-    import stripe
     from app.config import settings
 
     if not settings.STRIPE_SECRET_KEY:
