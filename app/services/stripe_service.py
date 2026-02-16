@@ -1,5 +1,8 @@
 import stripe
 
+from app.services.url_utils import append_query_param
+
+
 def create_checkout_session(
     order_id: int,
     amount_eur_cents: int,
@@ -29,7 +32,7 @@ def create_checkout_session(
             }
         ],
         mode="payment",
-        success_url=success_url + f"?order_id={order_id}",
+        success_url=append_query_param(success_url, "order_id", order_id),
         cancel_url=cancel_url,
         metadata={"order_id": str(order_id)},
     )
