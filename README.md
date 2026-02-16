@@ -29,12 +29,13 @@ REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checko
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
 ```
 
 ### Environment variables
 
-Create `.env` in the repository root (you can copy from `.env.example`). `DATABASE_URL` is required:
+Create `.env` in the repository root (you can copy from `.env.example`). `DATABASE_URL` is required.
+The app does not auto-load `.env` in code, so pass it explicitly via `--env-file .env` (or export vars in your shell):
 
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/marketplace

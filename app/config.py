@@ -1,10 +1,4 @@
 import os
-from pathlib import Path
-
-from dotenv import load_dotenv
-
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
 
 
 class Settings:
@@ -74,14 +68,6 @@ class Settings:
     @property
     def CORS_ORIGINS(self) -> str:
         return os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
-
-    @property
-    def DB_CONNECT_RETRIES(self) -> int:
-        return self._get_int("DB_CONNECT_RETRIES", 10)
-
-    @property
-    def DB_CONNECT_RETRY_DELAY_SECONDS(self) -> int:
-        return self._get_int("DB_CONNECT_RETRY_DELAY_SECONDS", 1)
 
     @property
     def DB_CONNECT_RETRIES(self) -> int:
