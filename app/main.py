@@ -29,6 +29,40 @@ def _is_http_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
 
 
+def _strip_wrapping_quotes(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+        return stripped[1:-1].strip()
+    return stripped
+
+
+def _normalize_http_url_for_railway(value: str, is_railway: bool) -> tuple[str, bool]:
+    cleaned = _strip_wrapping_quotes(value)
+    if not is_railway:
+        return cleaned, False
+    if _is_http_url(cleaned):
+        return cleaned, False
+
+    candidate = urlparse(f"//{cleaned}")
+    if candidate.hostname:
+        return f"https://{cleaned}", True
+    return cleaned, False
+
+
+def _get_effective_cors_origins(cors_raw: str, is_railway: bool) -> tuple[list[str], list[str]]:
+    origins = [origin.strip() for origin in cors_raw.split(",") if origin.strip()]
+    normalized_origins: list[str] = []
+    coerced_origins: list[str] = []
+
+    for origin in origins:
+        normalized, coerced = _normalize_http_url_for_railway(origin, is_railway)
+        normalized_origins.append(normalized)
+        if coerced:
+            coerced_origins.append(origin)
+
+    return normalized_origins, coerced_origins
+
+
 def _is_railway_runtime() -> bool:
     return any(
         os.getenv(env_name)
@@ -109,7 +143,11 @@ def _validate_required_env_for_runtime() -> None:
             "Set JWT_SECRET in Railway Variables."
         )
 
-    base_url = settings.BASE_URL.strip()
+    base_url, coerced_base = _normalize_http_url_for_railway(settings.BASE_URL, is_railway)
+    if coerced_base:
+        warnings.append(
+            "BASE_URL has no scheme in Railway runtime and was normalized to https:// at startup."
+        )
     parsed_base = urlparse(base_url)
     if not _is_http_url(base_url):
         errors.append("BASE_URL must be an absolute http(s) URL, e.g. https://your-app.up.railway.app")
@@ -120,13 +158,18 @@ def _validate_required_env_for_runtime() -> None:
         )
 
     cors_raw = settings.CORS_ORIGINS.strip()
-    origins = [origin.strip() for origin in cors_raw.split(",") if origin.strip()]
+    origins, coerced_origins = _get_effective_cors_origins(cors_raw, is_railway)
     if not origins:
         errors.append("CORS_ORIGINS must contain at least one comma-separated origin URL.")
     else:
         invalid_origins = [origin for origin in origins if not _is_http_url(origin)]
         if invalid_origins:
             errors.append(f"CORS_ORIGINS contains invalid URL(s): {', '.join(invalid_origins)}")
+        if coerced_origins:
+            warnings.append(
+                "CORS_ORIGINS includes entries without scheme in Railway runtime and they were "
+                f"normalized to https://: {', '.join(coerced_origins)}"
+            )
 
         if is_railway:
             localhost_origins = [
@@ -224,7 +267,7 @@ app.openapi = custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS.split(","),
+    allow_origins=_get_effective_cors_origins(settings.CORS_ORIGINS, _is_railway_runtime())[0],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],

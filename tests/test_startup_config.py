@@ -77,3 +77,12 @@ def test_validate_required_env_rejects_invalid_base_url(monkeypatch):
 
     with pytest.raises(RuntimeError, match="BASE_URL must be an absolute http\\(s\\) URL"):
         _validate_required_env_for_runtime()
+
+
+def test_validate_required_env_accepts_bare_domains_on_railway(monkeypatch):
+    monkeypatch.setenv("RAILWAY_PROJECT_ID", "proj_test")
+    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("BASE_URL", "web-production-f966.up.railway.app")
+    monkeypatch.setenv("CORS_ORIGINS", "web-production-f966.up.railway.app")
+
+    _validate_required_env_for_runtime()
