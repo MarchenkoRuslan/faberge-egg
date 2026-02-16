@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,11 +16,44 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+logger = logging.getLogger("app.startup")
+
+
+def _db_url_diagnostics(database_url: str) -> str:
+    parsed = urlparse(database_url)
+    host = parsed.hostname or "<missing>"
+    port = parsed.port or "<missing>"
+    db_name = parsed.path.lstrip("/") or "<missing>"
+    scheme = parsed.scheme or "<missing>"
+    query = parsed.query or "<empty>"
+
+    tips = []
+    if host in {"localhost", "127.0.0.1"}:
+        tips.append("Host points to localhost; in Railway use Postgres service reference in DATABASE_URL.")
+    if scheme in {"postgres", "postgresql"}:
+        tips.append("URL scheme is fine; app normalizes it to postgresql+psycopg internally.")
+    if "sslmode" not in query:
+        tips.append("No sslmode in URL query; external managed DBs often require sslmode=require.")
+    if not tips:
+        tips.append("URL structure looks valid; check network access, DB credentials, and DB service status.")
+
+    return (
+        f"scheme={scheme}, host={host}, port={port}, database={db_name}, query={query}; "
+        f"tips={' | '.join(tips)}"
+    )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:
+        logger.exception(
+            "Database initialization failed: %s. DATABASE_URL diagnostics: %s",
+            str(exc),
+            _db_url_diagnostics(settings.DATABASE_URL),
+        )
+        raise
     db = next(get_db())
     try:
         seed_first_lot(db)

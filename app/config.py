@@ -77,8 +77,3 @@ class Settings:
 
 
 settings = Settings()
-
-# Validate critical settings
-if settings.JWT_SECRET == "change-me-in-production":
-    import warnings
-    warnings.warn("JWT_SECRET is using default value. Change it in production!", UserWarning)
