@@ -389,3 +389,140 @@ def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_lot
     assert order.status == "pending"
     assert order.external_payment_id is None
     assert test_lot.sold_special_fractions == 0
+
+
+
+def test_paykilla_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_lot, db):
+    """PayKilla amount mismatch must not mark order paid."""
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=500,
+        amount_eur_cents=1500,
+        payment_method="paykilla",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    response = _paykilla_post(
+        client,
+        {
+            "order_id": order.id,
+            "amount_eur_cents": 999,
+            "transaction_id": "tx_mismatch",
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == 0
+
+
+def test_paykilla_webhook_capacity_exceeded_keeps_order_pending(client, test_user, test_lot, db):
+    """When lot cap is exhausted, webhook must not move order to paid."""
+    test_lot.sold_special_fractions = test_lot.special_price_fractions_cap
+    db.commit()
+
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=1,
+        amount_eur_cents=3,
+        payment_method="paykilla",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    response = _paykilla_post(
+        client,
+        {
+            "order_id": order.id,
+            "transaction_id": "tx_over_cap",
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == test_lot.special_price_fractions_cap
+
+
+def test_stripe_webhook_non_positive_order_id(client):
+    """Stripe webhook should ignore non-positive order_id."""
+    event_data = {
+        "id": "evt_test",
+        "type": "checkout.session.completed",
+        "data": {"object": {"id": "cs_test_123", "metadata": {"order_id": "0"}}},
+    }
+
+    with patch("stripe.Webhook.construct_event") as mock_construct:
+        mock_construct.return_value = event_data
+        response = client.post(
+            "/webhooks/stripe",
+            content=json.dumps(event_data).encode(),
+            headers={"stripe-signature": "test_signature"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["received"] is True
+
+
+
+def test_paykilla_webhook_non_positive_amount_returns_400(client, test_user, test_lot, db):
+    """amount_eur_cents must be a positive integer when provided."""
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=500,
+        amount_eur_cents=1500,
+        payment_method="paykilla",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    response = _paykilla_post(
+        client,
+        {
+            "order_id": order.id,
+            "amount_eur_cents": 0,
+            "transaction_id": "tx_zero_amount",
+        },
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "amount_eur_cents" in response.json()["detail"]
+
+    db.refresh(order)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+
+
+def test_paykilla_webhook_non_positive_order_id_with_valid_signature(client):
+    """PayKilla callback should return 400 for non-positive order_id with valid signature."""
+    from app.config import settings
+    import hmac
+    import hashlib
+
+    payload = json.dumps({"order_id": 0}).encode()
+    signature = hmac.new(
+        settings.PAYKILLA_WEBHOOK_SECRET.encode("utf-8"),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+    response = client.post(
+        "/webhooks/paykilla",
+        content=payload,
+        headers={"x-paykilla-signature": signature},
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "positive" in response.json()["detail"]

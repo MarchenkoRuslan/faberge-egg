@@ -15,6 +15,7 @@ from app.schemas.orders import (
     PaymentMethodsResponse,
 )
 from app.services.payment_gateways import get_enabled_payment_methods, get_payment_gateways
+from app.services.url_utils import validate_checkout_redirect_url
 
 router = APIRouter()
 
@@ -46,6 +47,19 @@ def create_order(
     Create an order for the given lot and fraction count.
     Validates min/max fractions. Returns checkout_url for redirect (Stripe or PayKilla).
     """
+    gateways = get_payment_gateways()
+    gateway = gateways.get(body.payment_method)
+    if not gateway:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported payment method: {body.payment_method}",
+        )
+    if not gateway.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Payment method {body.payment_method} is currently unavailable",
+        )
+
     lot = db.query(Lot).filter(Lot.id == body.lot_id, Lot.is_active == True).first()
     if not lot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot not found")
@@ -63,8 +77,15 @@ def create_order(
             detail=f"Only {remaining} fractions available at special price",
         )
 
-    # Price in cents (special price €0.03 -> 3 cents per fraction)
-    # Use Decimal for precise calculation
+    success_url = body.return_url or gateway.success_url
+    cancel_url = body.cancel_url or gateway.cancel_url
+
+    if body.return_url:
+        success_url = validate_checkout_redirect_url(body.return_url, "return_url")
+    if body.cancel_url:
+        cancel_url = validate_checkout_redirect_url(body.cancel_url, "cancel_url")
+
+    # Use Decimal for precise conversion to cents.
     price_special_decimal = Decimal(str(lot.price_special_eur))
     amount_eur_cents = int(price_special_decimal * Decimal("100") * Decimal(str(body.fraction_count)))
 
@@ -77,19 +98,7 @@ def create_order(
         status="pending",
     )
     db.add(order)
-    db.commit()
-    db.refresh(order)
-
-    gateways = get_payment_gateways()
-    gateway = gateways.get(body.payment_method)
-    if not gateway:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported payment method: {body.payment_method}",
-        )
-
-    success_url = body.return_url or gateway.success_url
-    cancel_url = body.cancel_url or gateway.cancel_url
+    db.flush()
 
     try:
         result = gateway.create_checkout(
@@ -113,11 +122,14 @@ def create_order(
             detail="Failed to create checkout session",
         )
 
-    if result.checkout_url is None:
+    if not result.checkout_url:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create checkout session",
         )
+
+    db.commit()
 
     return OrderCreateResponse(
         order_id=order.id,
