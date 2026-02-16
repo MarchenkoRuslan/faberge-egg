@@ -32,12 +32,12 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Optional environment variables
+### Environment variables
 
-Create `.env` in the repository root to override defaults:
+Create `.env` in the repository root (you can copy from `.env.example`). `DATABASE_URL` is required:
 
 ```env
-DATABASE_URL=sqlite:///./marketplace.db
+DATABASE_URL=postgresql://user:password@localhost:5432/marketplace
 JWT_SECRET=change-me-in-production
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
@@ -54,7 +54,25 @@ PAYKILLA_CANCEL_URL=http://localhost:3000/cancel
 
 MIN_FRACTIONS=1
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+BASE_URL=http://localhost:8000
 ```
+
+
+## Deploy to Railway
+
+1. Create a new Railway project and connect this repository.
+2. Add a **PostgreSQL** service in Railway. Railway injects `DATABASE_URL` for the app service automatically.
+3. Set required app variables in Railway:
+   - `JWT_SECRET` (must be a strong secret in production)
+   - `CORS_ORIGINS` (your frontend domain(s), comma-separated)
+   - `BASE_URL` (your Railway public domain, for example `https://your-app.up.railway.app`)
+   - Payment variables as needed: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `PAYKILLA_API_KEY`, `PAYKILLA_WEBHOOK_SECRET`, `PAYKILLA_SUCCESS_URL`, `PAYKILLA_CANCEL_URL`
+4. Configure provider webhooks to point to your Railway domain:
+   - Stripe: `https://<railway-domain>/webhooks/stripe`
+   - PayKilla: `https://<railway-domain>/webhooks/paykilla`
+5. Deploy. The included `Procfile` starts Uvicorn using Railway's `PORT` value.
+
+> PostgreSQL is required for all environments. Railway-managed PostgreSQL is recommended for production.
 
 ## API docs
 

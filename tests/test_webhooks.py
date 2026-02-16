@@ -218,6 +218,18 @@ def test_stripe_webhook_no_secret(client):
             os.environ["STRIPE_WEBHOOK_SECRET"] = original_secret
 
 
+import hashlib
+import hmac
+
+def _paykilla_post(client, payload: dict, *, include_signature: bool = True, secret: str = "pk_whsec_test_mock"):
+    raw_body = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json"}
+    if include_signature:
+        signature = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        headers["x-paykilla-signature"] = signature
+    return client.post("/webhooks/paykilla", content=raw_body, headers=headers)
+
+
 def test_paykilla_webhook_success(client, test_user, test_lot, db):
     """Test successful PayKilla webhook processing."""
     order = Order(
@@ -231,24 +243,22 @@ def test_paykilla_webhook_success(client, test_user, test_lot, db):
     db.add(order)
     db.commit()
     order_id = order.id
-    
-    response = client.post(
-        "/webhooks/paykilla",
-        json={
+
+    response = _paykilla_post(
+        client,
+        {
             "order_id": order_id,
             "transaction_id": "tx_paykilla_123",
         },
     )
-    
+
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["received"] is True
-    
-    # Verify order was updated
+
     db.refresh(order)
     assert order.status == "paid"
     assert order.external_payment_id == "tx_paykilla_123"
-    
-    # Verify lot fractions were incremented
+
     db.refresh(test_lot)
     assert test_lot.sold_special_fractions == 500
 
@@ -267,61 +277,63 @@ def test_paykilla_webhook_idempotent(client, test_user, test_lot, db):
     db.commit()
     initial_sold = test_lot.sold_special_fractions
     order_id = order.id
-    
-    response = client.post(
-        "/webhooks/paykilla",
-        json={
+
+    response = _paykilla_post(
+        client,
+        {
             "order_id": order_id,
             "transaction_id": "tx_paykilla_123",
         },
     )
-    
+
     assert response.status_code == status.HTTP_200_OK
-    
-    # Verify fractions were not incremented again
+
     db.refresh(test_lot)
     assert test_lot.sold_special_fractions == initial_sold
 
 
+def test_paykilla_webhook_missing_signature(client):
+    response = _paykilla_post(client, {"order_id": 1}, include_signature=False)
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_paykilla_webhook_invalid_signature(client):
+    response = _paykilla_post(client, {"order_id": 1}, secret="wrong-secret")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
 def test_paykilla_webhook_no_order_id(client):
     """Test PayKilla webhook without order_id."""
-    response = client.post(
-        "/webhooks/paykilla",
-        json={},
-    )
-    
+    response = _paykilla_post(client, {})
+
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "order_id" in response.json()["detail"].lower()
 
 
 def test_paykilla_webhook_invalid_json(client):
     """Test PayKilla webhook with invalid JSON."""
+    raw_body = b"invalid json"
+    signature = hmac.new(b"pk_whsec_test_mock", raw_body, hashlib.sha256).hexdigest()
     response = client.post(
         "/webhooks/paykilla",
-        content=b"invalid json",
-        headers={"Content-Type": "application/json"},
+        content=raw_body,
+        headers={"Content-Type": "application/json", "x-paykilla-signature": signature},
     )
-    
+
     assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 def test_paykilla_webhook_invalid_order_id_format(client):
     """Test PayKilla webhook with invalid order_id format."""
-    response = client.post(
-        "/webhooks/paykilla",
-        json={"order_id": "not-a-number"},
-    )
-    
+    response = _paykilla_post(client, {"order_id": "not-a-number"})
+
     assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 def test_paykilla_webhook_order_not_found(client):
     """Test PayKilla webhook with non-existent order."""
-    response = client.post(
-        "/webhooks/paykilla",
-        json={"order_id": 99999},
-    )
-    
+    response = _paykilla_post(client, {"order_id": 99999})
+
     assert response.status_code == status.HTTP_200_OK
 
 
@@ -332,21 +344,17 @@ def test_paykilla_webhook_wrong_payment_method(client, test_user, test_lot, db):
         lot_id=test_lot.id,
         fraction_count=500,
         amount_eur_cents=1500,
-        payment_method="stripe",  # Not paykilla
+        payment_method="stripe",
         status="pending",
     )
     db.add(order)
     db.commit()
     order_id = order.id
-    
-    response = client.post(
-        "/webhooks/paykilla",
-        json={"order_id": order_id},
-    )
-    
+
+    response = _paykilla_post(client, {"order_id": order_id})
+
     assert response.status_code == status.HTTP_200_OK
-    
-    # Order should not be updated
+
     db.refresh(order)
     assert order.status == "pending"
 
@@ -364,9 +372,9 @@ def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_lot
     db.add(order)
     db.commit()
 
-    response = client.post(
-        "/webhooks/paykilla",
-        json={
+    response = _paykilla_post(
+        client,
+        {
             "order_id": order.id,
             "status": "failed",
             "transaction_id": "tx_paykilla_failed_1",
