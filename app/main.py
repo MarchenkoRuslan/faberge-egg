@@ -89,6 +89,8 @@ def _db_url_diagnostics(database_url: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database_url = settings.DATABASE_URL
+    logger.info("Application startup initiated.")
+    logger.info("DATABASE_URL diagnostics at startup: %s", _db_url_diagnostics(database_url))
     try:
         _validate_database_url_for_runtime(database_url)
         init_db()
@@ -104,6 +106,7 @@ async def lifespan(app: FastAPI):
         seed_first_lot(db)
     finally:
         db.close()
+    logger.info("Application startup completed successfully.")
     yield
 
 
@@ -166,6 +169,11 @@ app.include_router(lots.router, prefix="/api/lots", tags=["Lots"])
 app.include_router(order.router, prefix="/api/orders", tags=["Orders"])
 app.include_router(stripe_webhook.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(paykilla_callback.router, prefix="/webhooks", tags=["Webhooks"])
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "Marketplace API"}
 
 
 @app.get("/health")
