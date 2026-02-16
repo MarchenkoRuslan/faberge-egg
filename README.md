@@ -55,6 +55,8 @@ PAYKILLA_CANCEL_URL=http://localhost:3000/cancel
 MIN_FRACTIONS=1
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 BASE_URL=http://localhost:8000
+DB_CONNECT_RETRIES=10
+DB_CONNECT_RETRY_DELAY_SECONDS=1
 ```
 
 

@@ -75,5 +75,21 @@ class Settings:
     def CORS_ORIGINS(self) -> str:
         return os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
 
+    @property
+    def DB_CONNECT_RETRIES(self) -> int:
+        return self._get_int("DB_CONNECT_RETRIES", 10)
+
+    @property
+    def DB_CONNECT_RETRY_DELAY_SECONDS(self) -> int:
+        return self._get_int("DB_CONNECT_RETRY_DELAY_SECONDS", 1)
+
+    @property
+    def DB_CONNECT_RETRIES(self) -> int:
+        return self._get_int("DB_CONNECT_RETRIES", 10)
+
+    @property
+    def DB_CONNECT_RETRY_DELAY_SECONDS(self) -> int:
+        return self._get_int("DB_CONNECT_RETRY_DELAY_SECONDS", 1)
+
 
 settings = Settings()
