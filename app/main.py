@@ -20,6 +20,15 @@ logging.basicConfig(
 logger = logging.getLogger("app.startup")
 
 
+def _is_localhost(host: str | None) -> bool:
+    return host in {"localhost", "127.0.0.1"}
+
+
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+
+
 def _is_railway_runtime() -> bool:
     return any(
         os.getenv(env_name)
@@ -54,7 +63,7 @@ def _validate_database_url_for_runtime(database_url: str) -> None:
         raise RuntimeError("DATABASE_URL is missing host.")
     if not db_name:
         raise RuntimeError("DATABASE_URL is missing database name in path.")
-    if _is_railway_runtime() and host in {"localhost", "127.0.0.1"}:
+    if _is_railway_runtime() and _is_localhost(host):
         raise RuntimeError(
             "Invalid DATABASE_URL for Railway runtime: host is localhost/127.0.0.1 "
             f"(host={host}, port={port or '<missing>'}, database={db_name}). "
@@ -71,7 +80,7 @@ def _db_url_diagnostics(database_url: str) -> str:
     query = parsed.query or "<empty>"
 
     tips = []
-    if host in {"localhost", "127.0.0.1"}:
+    if _is_localhost(host):
         tips.append("Host points to localhost; in Railway use Postgres service reference in DATABASE_URL.")
     if scheme in {"postgres", "postgresql"}:
         tips.append("URL scheme is fine; app normalizes it to postgresql+psycopg internally.")
@@ -86,19 +95,76 @@ def _db_url_diagnostics(database_url: str) -> str:
     )
 
 
+def _validate_required_env_for_runtime() -> None:
+    errors = []
+    warnings = []
+    is_railway = _is_railway_runtime()
+
+    jwt_secret = settings.JWT_SECRET.strip()
+    if not jwt_secret:
+        errors.append("JWT_SECRET is required.")
+    elif is_railway and jwt_secret == "change-me-in-production":
+        errors.append(
+            "JWT_SECRET uses insecure default value in Railway runtime. "
+            "Set JWT_SECRET in Railway Variables."
+        )
+
+    base_url = settings.BASE_URL.strip()
+    parsed_base = urlparse(base_url)
+    if not _is_http_url(base_url):
+        errors.append("BASE_URL must be an absolute http(s) URL, e.g. https://your-app.up.railway.app")
+    elif is_railway and _is_localhost(parsed_base.hostname):
+        errors.append(
+            "BASE_URL points to localhost in Railway runtime. "
+            "Set BASE_URL to your public Railway domain."
+        )
+
+    cors_raw = settings.CORS_ORIGINS.strip()
+    origins = [origin.strip() for origin in cors_raw.split(",") if origin.strip()]
+    if not origins:
+        errors.append("CORS_ORIGINS must contain at least one comma-separated origin URL.")
+    else:
+        invalid_origins = [origin for origin in origins if not _is_http_url(origin)]
+        if invalid_origins:
+            errors.append(f"CORS_ORIGINS contains invalid URL(s): {', '.join(invalid_origins)}")
+
+        if is_railway:
+            localhost_origins = [
+                origin for origin in origins if _is_localhost(urlparse(origin).hostname)
+            ]
+            if localhost_origins:
+                warnings.append(
+                    "CORS_ORIGINS includes localhost in Railway runtime: "
+                    f"{', '.join(localhost_origins)}"
+                )
+
+    if warnings:
+        logger.warning("Startup environment warnings: %s", " | ".join(warnings))
+
+    if errors:
+        raise RuntimeError("Startup environment validation failed: " + " | ".join(errors))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database_url = settings.DATABASE_URL
+    database_url = "<unavailable>"
     logger.info("Application startup initiated.")
-    logger.info("DATABASE_URL diagnostics at startup: %s", _db_url_diagnostics(database_url))
     try:
+        database_url = settings.DATABASE_URL
+        logger.info("DATABASE_URL diagnostics at startup: %s", _db_url_diagnostics(database_url))
         _validate_database_url_for_runtime(database_url)
+        _validate_required_env_for_runtime()
         init_db()
     except Exception as exc:
+        diagnostics = (
+            _db_url_diagnostics(database_url)
+            if database_url != "<unavailable>"
+            else "DATABASE_URL unavailable (missing or unreadable)."
+        )
         logger.exception(
             "Database initialization failed: %s. DATABASE_URL diagnostics: %s",
             str(exc),
-            _db_url_diagnostics(database_url),
+            diagnostics,
         )
         raise
     db = next(get_db())
