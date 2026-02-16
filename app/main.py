@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
@@ -17,6 +18,48 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("app.startup")
+
+
+def _is_railway_runtime() -> bool:
+    return any(
+        os.getenv(env_name)
+        for env_name in (
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PUBLIC_DOMAIN",
+        )
+    )
+
+
+def _validate_database_url_for_runtime(database_url: str) -> None:
+    parsed = urlparse(database_url)
+    scheme = parsed.scheme
+    host = parsed.hostname
+    port = parsed.port
+    db_name = parsed.path.lstrip("/")
+    postgres_schemes = {"postgres", "postgresql", "postgresql+psycopg"}
+
+    if not scheme:
+        raise RuntimeError("DATABASE_URL is missing URL scheme (expected postgresql:// or postgresql+psycopg://).")
+    if scheme == "sqlite":
+        return
+    if scheme not in postgres_schemes:
+        raise RuntimeError(
+            f"DATABASE_URL has unsupported scheme '{scheme}' "
+            "(expected postgresql:// or postgresql+psycopg://)."
+        )
+    if not host:
+        raise RuntimeError("DATABASE_URL is missing host.")
+    if not db_name:
+        raise RuntimeError("DATABASE_URL is missing database name in path.")
+    if _is_railway_runtime() and host in {"localhost", "127.0.0.1"}:
+        raise RuntimeError(
+            "Invalid DATABASE_URL for Railway runtime: host is localhost/127.0.0.1 "
+            f"(host={host}, port={port or '<missing>'}, database={db_name}). "
+            "Use Railway Postgres reference, e.g. DATABASE_URL=${{Postgres.DATABASE_URL}}."
+        )
 
 
 def _db_url_diagnostics(database_url: str) -> str:
@@ -45,13 +88,15 @@ def _db_url_diagnostics(database_url: str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    database_url = settings.DATABASE_URL
     try:
+        _validate_database_url_for_runtime(database_url)
         init_db()
     except Exception as exc:
         logger.exception(
             "Database initialization failed: %s. DATABASE_URL diagnostics: %s",
             str(exc),
-            _db_url_diagnostics(settings.DATABASE_URL),
+            _db_url_diagnostics(database_url),
         )
         raise
     db = next(get_db())
