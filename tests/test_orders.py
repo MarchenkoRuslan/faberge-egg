@@ -391,3 +391,65 @@ def test_create_order_uses_gateway_default_urls(client, test_lot, auth_headers):
         assert response.status_code == status.HTTP_200_OK
         call_kwargs = mock_stripe.call_args.kwargs
         assert "order_id=" in call_kwargs["success_url"]
+
+
+def test_create_order_invalid_custom_return_url(client, test_lot, auth_headers):
+    """Reject non-http(s) custom return_url values."""
+    response = client.post(
+        "/api/orders",
+        json={
+            "lot_id": test_lot.id,
+            "fraction_count": 1000,
+            "payment_method": "stripe",
+            "return_url": "javascript:alert(1)",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "return_url" in response.json()["detail"]
+
+
+def test_create_order_stripe_error_rolls_back_pending_order(client, test_lot, auth_headers, db):
+    """Order row should not persist if checkout creation fails."""
+    pending_before = db.query(Order).count()
+
+    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+        mock_stripe.side_effect = ValueError("Stripe API error")
+
+        response = client.post(
+            "/api/orders",
+            json={
+                "lot_id": test_lot.id,
+                "fraction_count": 1000,
+                "payment_method": "stripe",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    pending_after = db.query(Order).count()
+    assert pending_after == pending_before
+
+
+def test_create_order_empty_checkout_url_returns_500_and_rolls_back(client, test_lot, auth_headers, db):
+    """Empty checkout URL must be treated as provider failure."""
+    pending_before = db.query(Order).count()
+
+    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+        mock_stripe.return_value.url = ""
+        mock_stripe.return_value.id = "cs_test_empty"
+
+        response = client.post(
+            "/api/orders",
+            json={
+                "lot_id": test_lot.id,
+                "fraction_count": 1000,
+                "payment_method": "stripe",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    pending_after = db.query(Order).count()
+    assert pending_after == pending_before
