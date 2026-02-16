@@ -349,3 +349,35 @@ def test_paykilla_webhook_wrong_payment_method(client, test_user, test_lot, db):
     # Order should not be updated
     db.refresh(order)
     assert order.status == "pending"
+
+
+def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_lot, db):
+    """Test that PayKilla webhook does not mark order as paid for failed statuses."""
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=500,
+        amount_eur_cents=1500,
+        payment_method="paykilla",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    response = client.post(
+        "/webhooks/paykilla",
+        json={
+            "order_id": order.id,
+            "status": "failed",
+            "transaction_id": "tx_paykilla_failed_1",
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["received"] is True
+
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == 0

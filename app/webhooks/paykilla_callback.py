@@ -3,11 +3,20 @@ import logging
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models import Lot, Order, get_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+SUCCESSFUL_PAYKILLA_STATUSES = {"success", "paid", "completed", "confirmed"}
+
+
+def is_successful_payment_status(status_value: str | None) -> bool:
+    """Return True when PayKilla callback status means payment is successful."""
+    if status_value is None:
+        return True
+    return status_value.strip().lower() in SUCCESSFUL_PAYKILLA_STATUSES
 
 
 def mark_order_paid_and_increment_lot(
@@ -78,8 +87,13 @@ async def paykilla_webhook(
         logger.error(f"Invalid order_id format: {order_id}, error: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_id must be integer")
     
+    payment_status = body.get("status")
+    if not is_successful_payment_status(payment_status):
+        logger.info(f"Ignoring PayKilla webhook for order {order_id} with status: {payment_status}")
+        return {"received": True}
+
     external_id = body.get("transaction_id") or body.get("payment_id")
-    
+
     success = mark_order_paid_and_increment_lot(order_id, external_id, db)
     if not success:
         logger.warning(f"Failed to process PayKilla webhook for order {order_id}")

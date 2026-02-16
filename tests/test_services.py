@@ -89,6 +89,27 @@ def test_stripe_create_checkout_session_parameters():
         assert call_kwargs["metadata"]["order_id"] == "42"
 
 
+def test_stripe_create_checkout_session_preserves_existing_query_params():
+    """Test that Stripe success_url keeps existing query params and appends order_id."""
+    with patch("app.services.stripe_service.stripe") as mock_stripe:
+        mock_session = MagicMock()
+        mock_session.url = "https://checkout.stripe.com/test"
+        mock_session.id = "cs_test_123"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        stripe_service.create_checkout_session(
+            order_id=77,
+            amount_eur_cents=5000,
+            fraction_count=100,
+            lot_name="Special Lot",
+            success_url="https://custom.com/success?source=app",
+            cancel_url="https://custom.com/cancel",
+        )
+
+        call_kwargs = mock_stripe.checkout.Session.create.call_args[1]
+        assert call_kwargs["success_url"] == "https://custom.com/success?source=app&order_id=77"
+
+
 def test_paykilla_create_payment_success():
     """Test successful PayKilla payment creation."""
     url = paykilla_service.create_payment(
@@ -134,3 +155,15 @@ def test_paykilla_create_payment_returns_url():
     assert isinstance(url, str)
     assert "order_id=123" in url
     assert "custom.com" in url
+
+
+def test_paykilla_create_payment_preserves_existing_query_params_and_fragments():
+    """Test PayKilla placeholder URL composition with existing query string and fragments."""
+    url = paykilla_service.create_payment(
+        order_id=123,
+        amount_eur_cents=5000,
+        success_url="https://custom.com/success?param=value#checkout",
+        cancel_url="https://custom.com/cancel",
+    )
+
+    assert url == "https://custom.com/success?param=value&order_id=123#checkout"
