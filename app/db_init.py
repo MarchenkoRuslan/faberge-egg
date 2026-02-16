@@ -12,7 +12,7 @@ def seed_first_lot(db_session):
     if db_session.query(Lot).filter(Lot.slug == "faberge-egg").first():
         return
     lot = Lot(
-        name="Яйцо Фаберже",
+        name="Faberge Egg",
         slug="faberge-egg",
         total_fractions=100_000_000,
         special_price_fractions_cap=3_000_000,
