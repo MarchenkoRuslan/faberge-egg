@@ -2,28 +2,29 @@ import os
 from decimal import Decimal
 from typing import Generator
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-from sqlalchemy.orm import Session, sessionmaker
-
-from app.main import app
-from app.models.database import Base, get_db
-from app.models.lot import Lot
-from app.models.user import User
-
-# Override settings for tests
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Override settings for tests before importing app modules
+TEST_DATABASE_URL = "sqlite:///:memory:"
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only"
 os.environ["STRIPE_SECRET_KEY"] = "sk_test_mock"
 os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_mock"
 os.environ["PAYKILLA_API_KEY"] = "pk_test_mock"
 os.environ["PAYKILLA_WEBHOOK_SECRET"] = "pk_whsec_test_mock"
 
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.main import app
+from app.models.database import Base, get_db
+from app.models.lot import Lot
+from app.models.user import User
+
 # Create test database engine
 test_engine = create_engine(
-    "sqlite:///:memory:",
+    TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
@@ -45,6 +46,7 @@ def db() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def client(db: Session) -> Generator[TestClient, None, None]:
     """Create a test client with database override."""
+
     def override_get_db():
         try:
             yield db

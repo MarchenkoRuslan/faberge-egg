@@ -18,7 +18,10 @@ class Settings:
 
     @property
     def DATABASE_URL(self) -> str:
-        return os.getenv("DATABASE_URL", "sqlite:///./marketplace.db")
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            raise ValueError("DATABASE_URL is required")
+        return database_url
 
     @property
     def JWT_SECRET(self) -> str:

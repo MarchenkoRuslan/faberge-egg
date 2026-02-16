@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 from decimal import Decimal
 from unittest.mock import patch
@@ -225,12 +227,16 @@ def test_order_flow_with_paykilla(client, db, test_lot, auth_headers):
         order_id = order_response.json()["order_id"]
         
         # Simulate PayKilla webhook
+        payload = {
+            "order_id": order_id,
+            "transaction_id": "tx_paykilla_123",
+        }
+        raw_body = json.dumps(payload).encode()
+        signature = hmac.new(b"pk_whsec_test_mock", raw_body, hashlib.sha256).hexdigest()
         webhook_response = client.post(
             "/webhooks/paykilla",
-            json={
-                "order_id": order_id,
-                "transaction_id": "tx_paykilla_123",
-            },
+            content=raw_body,
+            headers={"Content-Type": "application/json", "x-paykilla-signature": signature},
         )
         assert webhook_response.status_code == status.HTTP_200_OK
         
