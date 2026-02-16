@@ -5,6 +5,7 @@ from typing import Generator
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.main import app
@@ -21,7 +22,11 @@ os.environ["PAYKILLA_API_KEY"] = "pk_test_mock"
 os.environ["PAYKILLA_WEBHOOK_SECRET"] = "pk_whsec_test_mock"
 
 # Create test database engine
-test_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+test_engine = create_engine(
+    "sqlite:///:memory:",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 

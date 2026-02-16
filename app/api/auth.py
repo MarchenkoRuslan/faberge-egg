@@ -11,7 +11,7 @@ from app.config import settings
 from app.models import User, get_db
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
 class RegisterRequest(BaseModel):
@@ -58,7 +58,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
-    to_encode = {"sub": user_id, "exp": expire}
+    to_encode = {"sub": str(user_id), "exp": expire}
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 

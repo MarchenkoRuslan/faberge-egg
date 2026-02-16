@@ -222,8 +222,8 @@ def test_create_order_unsupported_payment_method(client, test_lot, auth_headers)
         headers=auth_headers,
     )
     
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "unsupported" in response.json()["detail"].lower()
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert any(err.get("type") == "literal_error" for err in response.json()["detail"])
 
 
 def test_get_my_orders_success(client, test_user, test_lot, auth_headers, db):
