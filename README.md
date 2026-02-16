@@ -7,6 +7,7 @@ REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checko
 - JWT-based authentication (`/api/auth/register`, `/api/auth/login`)
 - Public lots API (`/api/lots`, `/api/lots/{id}`)
 - Authenticated orders API (`/api/orders`, `/api/orders/me`, `/api/orders/{id}/status`)
+- Payment methods discovery endpoint (`/api/orders/payment-methods`)
 - Payment integrations:
   - Stripe Checkout session creation
   - Stripe webhook processing
@@ -18,7 +19,7 @@ REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checko
 - `app/main.py` — FastAPI app setup and router registration
 - `app/api/` — Auth, lots, and orders endpoints
 - `app/webhooks/` — Stripe and PayKilla webhook handlers
-- `app/services/` — Payment service helpers
+- `app/services/` — Payment service helpers and gateway registry for extensible provider integrations (including future crypto gateways)
 - `app/models/` — SQLAlchemy models and DB wiring
 - `tests/` — automated tests
 

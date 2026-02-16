@@ -12,10 +12,24 @@ from app.schemas.orders import (
     OrderCreateResponse,
     OrderResponse,
     OrderStatusResponse,
+    PaymentMethodsResponse,
 )
-from app.services import paykilla_service, stripe_service
+from app.services.payment_gateways import get_enabled_payment_methods, get_payment_gateways
 
 router = APIRouter()
+
+
+@router.get(
+    "/payment-methods",
+    response_model=PaymentMethodsResponse,
+    summary="List available and enabled payment methods",
+)
+def payment_methods():
+    gateways = get_payment_gateways()
+    return PaymentMethodsResponse(
+        available_methods=list(gateways.keys()),
+        enabled_methods=get_enabled_payment_methods(),
+    )
 
 
 @router.post(
@@ -66,55 +80,40 @@ def create_order(
     db.commit()
     db.refresh(order)
 
-    success_url = body.return_url or (
-        settings.STRIPE_SUCCESS_URL if body.payment_method == "stripe" else settings.PAYKILLA_SUCCESS_URL
-    )
-    cancel_url = body.cancel_url or (
-        settings.STRIPE_CANCEL_URL if body.payment_method == "stripe" else settings.PAYKILLA_CANCEL_URL
-    )
+    gateways = get_payment_gateways()
+    gateway = gateways.get(body.payment_method)
+    if not gateway:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported payment method: {body.payment_method}",
+        )
 
-    checkout_url = None
-    session_id = None
+    success_url = body.return_url or gateway.success_url
+    cancel_url = body.cancel_url or gateway.cancel_url
+
     try:
-        if body.payment_method == "stripe":
-            result = stripe_service.create_checkout_session(
-                order_id=order.id,
-                amount_eur_cents=amount_eur_cents,
-                fraction_count=body.fraction_count,
-                lot_name=lot.name,
-                success_url=success_url,
-                cancel_url=cancel_url,
-            )
-            if isinstance(result, tuple):
-                checkout_url, session_id = result
-            else:
-                checkout_url = result
-        elif body.payment_method == "paykilla":
-            checkout_url = paykilla_service.create_payment(
-                order_id=order.id,
-                amount_eur_cents=amount_eur_cents,
-                success_url=success_url,
-                cancel_url=cancel_url,
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported payment method: {body.payment_method}",
-            )
-
-        if checkout_url is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create checkout session",
-            )
+        result = gateway.create_checkout(
+            order_id=order.id,
+            amount_eur_cents=amount_eur_cents,
+            fraction_count=body.fraction_count,
+            lot_name=lot.name,
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create checkout session",
+        )
+
+    if result.checkout_url is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create checkout session",
@@ -122,8 +121,8 @@ def create_order(
 
     return OrderCreateResponse(
         order_id=order.id,
-        checkout_url=checkout_url,
-        session_id=session_id,
+        checkout_url=result.checkout_url,
+        session_id=result.session_id,
         payment_method=body.payment_method,
     )
 
