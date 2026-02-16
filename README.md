@@ -1,29 +1,71 @@
 # Marketplace Backend (Python / FastAPI)
 
-REST API для маркетплейса фракционных лотов: авторизация (JWT), лоты, заказы, Stripe и PayKilla.
+REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checkout, and PayKilla callbacks.
 
-## Запуск
+## Features
+
+- JWT-based authentication (`/api/auth/register`, `/api/auth/login`)
+- Public lots API (`/api/lots`, `/api/lots/{id}`)
+- Authenticated orders API (`/api/orders`, `/api/orders/me`, `/api/orders/{id}/status`)
+- Payment integrations:
+  - Stripe Checkout session creation
+  - Stripe webhook processing
+  - PayKilla callback processing
+- Healthcheck endpoint (`/health`)
+
+## Project layout
+
+- `app/main.py` — FastAPI app setup and router registration
+- `app/api/` — Auth, lots, and orders endpoints
+- `app/webhooks/` — Stripe and PayKilla webhook handlers
+- `app/services/` — Payment service helpers
+- `app/models/` — SQLAlchemy models and DB wiring
+- `tests/` — automated tests
+
+## Local run
 
 ```bash
-cd backend
-python -m venv venv
-# Windows: venv\Scripts\activate
-# Unix: source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# Отредактировать .env (JWT_SECRET, STRIPE_*, PAYKILLA_*)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- API: http://localhost:8000  
-- Swagger UI: http://localhost:8000/docs  
-- ReDoc: http://localhost:8000/redoc  
+### Optional environment variables
 
-## Эндпоинты
+Create `.env` in the repository root to override defaults:
 
-- **Auth:** `POST /api/auth/register`, `POST /api/auth/login` (получить JWT).
-- **Lots:** `GET /api/lots`, `GET /api/lots/{id}` (публичные).
-- **Orders:** `POST /api/orders`, `GET /api/orders/me`, `GET /api/orders/{id}/status` (нужен заголовок `Authorization: Bearer <token>`).
-- **Webhooks:** `POST /webhooks/stripe`, `POST /webhooks/paykilla`.
+```env
+DATABASE_URL=sqlite:///./marketplace.db
+JWT_SECRET=change-me-in-production
+JWT_ALGORITHM=HS256
+JWT_EXPIRE_MINUTES=60
 
-В Swagger используйте кнопку **Authorize** и вставьте токен из ответа `/api/auth/login`.
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_SUCCESS_URL=http://localhost:3000/success
+STRIPE_CANCEL_URL=http://localhost:3000/cancel
+
+PAYKILLA_API_KEY=
+PAYKILLA_WEBHOOK_SECRET=
+PAYKILLA_SUCCESS_URL=http://localhost:3000/success
+PAYKILLA_CANCEL_URL=http://localhost:3000/cancel
+
+MIN_FRACTIONS=1
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+```
+
+## API docs
+
+- API base: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+
+For protected endpoints, use **Authorize** in Swagger UI with a bearer token from `POST /api/auth/login`.
+
+## Running tests
+
+```bash
+pytest -q
+```

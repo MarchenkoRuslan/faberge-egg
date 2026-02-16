@@ -1,68 +1,68 @@
-# Тесты для бекенда маркетплейса
+# Backend test guide
 
-## Установка зависимостей
+## Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Запуск тестов
+## Run tests
 
-### Все тесты
+### Full suite
 ```bash
 pytest
 ```
 
-### С подробным выводом
+### Verbose output
 ```bash
 pytest -v
 ```
 
-### С покрытием кода
+### With coverage report
 ```bash
 pytest --cov=app --cov-report=html
 ```
 
-После выполнения команды откройте `htmlcov/index.html` в браузере для просмотра отчета о покрытии.
+Open `htmlcov/index.html` in your browser to inspect coverage details.
 
-### Конкретный файл тестов
+### Single test file
 ```bash
 pytest tests/test_auth.py
 ```
 
-### Конкретный тест
+### Single test case
 ```bash
 pytest tests/test_auth.py::test_register_success
 ```
 
-### Только быстрые тесты (без интеграционных)
+### Fast subset (exclude integration tests)
 ```bash
 pytest -k "not integration"
 ```
 
-## Структура тестов
+## Test structure
 
-- `test_auth.py` - Тесты авторизации (регистрация, логин, JWT)
-- `test_lots.py` - Тесты лотов (список, получение по ID)
-- `test_orders.py` - Тесты заказов (создание, список, статус)
-- `test_webhooks.py` - Тесты webhooks (Stripe, PayKilla)
-- `test_services.py` - Тесты сервисов (Stripe, PayKilla с моками)
-- `test_dependencies.py` - Тесты зависимостей (авторизация)
-- `test_integration.py` - Интеграционные тесты (полный flow)
+- `test_auth.py` - Authentication tests (register, login, JWT)
+- `test_lots.py` - Lots endpoints tests
+- `test_orders.py` - Orders endpoints tests
+- `test_webhooks.py` - Stripe and PayKilla webhook tests
+- `test_services.py` - Service-layer tests with mocks
+- `test_dependencies.py` - Auth dependency tests
+- `test_integration.py` - End-to-end integration flow tests
 
-## Фикстуры
+## Fixtures
 
-- `client` - FastAPI TestClient
-- `db` - Тестовая БД (in-memory SQLite)
-- `test_user` - Тестовый пользователь
-- `test_user2` - Второй тестовый пользователь
-- `test_lot` - Тестовый лот
-- `test_lot_inactive` - Неактивный тестовый лот
-- `auth_token` - JWT токен для тестового пользователя
-- `auth_headers` - Заголовки с авторизацией
+- `client` - FastAPI `TestClient`
+- `db` - Test database (in-memory SQLite)
+- `test_user` - Primary test user
+- `test_user2` - Secondary test user
+- `test_lot` - Active test lot
+- `test_lot_inactive` - Inactive test lot
+- `auth_token` - JWT for test user
+- `auth_headers` - Authorization headers
 
-## Примечания
+## Notes
 
-- Все тесты используют изолированную тестовую БД (in-memory SQLite)
-- Внешние сервисы (Stripe, PayKilla) мокируются
-- Каждый тест выполняется в отдельной транзакции БД
+- Tests run against an isolated in-memory SQLite database.
+- External services (Stripe, PayKilla) are mocked.
+- Each test is executed in an isolated DB transaction.
