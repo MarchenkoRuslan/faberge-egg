@@ -6,7 +6,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.config import settings
 from app.models.database import Base, engine
-from app.models import User, Lot, Order  # noqa: F401 - register models
+from app.models import Lot, OneTimeToken, Order, RefreshToken, User  # noqa: F401 - register models
 
 logger = logging.getLogger(__name__)
 

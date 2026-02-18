@@ -223,7 +223,7 @@ app = FastAPI(
     title="Marketplace API",
     description=(
         "Backend API for fractional marketplace (lots, orders, Stripe/PayKilla). "
-        "Use **Authorize** with the token from `POST /api/auth/login` for protected endpoints (Orders)."
+        "Use **Authorize** with `accessToken` from `POST /api/auth/login` for protected endpoints."
     ),
     version="1.0.0",
     docs_url="/docs",
@@ -231,7 +231,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
     openapi_tags=[
-        {"name": "Auth", "description": "Register and login (JWT)."},
+        {"name": "Auth", "description": "Registration, email verification, login, profile, password reset."},
         {"name": "Lots", "description": "List and get lots (fractions, prices)."},
         {"name": "Orders", "description": "Create order and list my orders (requires auth)."},
         {"name": "Webhooks", "description": "Called by Stripe and PayKilla."},
@@ -256,7 +256,7 @@ def custom_openapi():
             "type": "http",
             "scheme": "bearer",
             "bearerFormat": "JWT",
-            "description": "JWT from POST /api/auth/login",
+            "description": "accessToken from POST /api/auth/login",
         },
     }
     app.openapi_schema = openapi_schema

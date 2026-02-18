@@ -4,7 +4,9 @@ REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checko
 
 ## Features
 
-- JWT-based authentication (`/api/auth/register`, `/api/auth/login`)
+- JWT-based authentication with refresh token flow
+- Email verification and password reset by email
+- Profile endpoint for current user (`/api/auth/me`)
 - Public lots API (`/api/lots`, `/api/lots/{id}`)
 - Authenticated orders API (`/api/orders`, `/api/orders/me`, `/api/orders/{id}/status`)
 - Payment methods discovery endpoint (`/api/orders/payment-methods`)
@@ -42,6 +44,22 @@ DATABASE_URL=postgresql://user:password@localhost:5432/marketplace
 JWT_SECRET=change-me-in-production
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
+JWT_REFRESH_EXPIRE_DAYS=30
+EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES=1440
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
+EMAIL_RESEND_COOLDOWN_SECONDS=60
+
+FRONTEND_URL=http://localhost:3000
+EMAIL_VERIFY_PATH=/verify-email
+PASSWORD_RESET_PATH=/restore-password
+
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+SMTP_FROM_NAME=Marketplace API
+SMTP_USE_TLS=true
 
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
@@ -84,7 +102,7 @@ DB_CONNECT_RETRY_DELAY_SECONDS=1
 - ReDoc: `http://localhost:8000/redoc`
 - OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-For protected endpoints, use **Authorize** in Swagger UI with a bearer token from `POST /api/auth/login`.
+For protected endpoints, use **Authorize** in Swagger UI with `accessToken` from `POST /api/auth/login`.
 
 ## Running tests
 
