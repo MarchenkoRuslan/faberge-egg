@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.config import settings
-from app.models.database import Base, _normalize_database_url, engine
+from app.models.database import _normalize_database_url, engine
 from app.models import Lot, OneTimeToken, Order, RefreshToken, User  # noqa: F401 - register models
 
 logger = logging.getLogger(__name__)
@@ -43,12 +43,7 @@ def init_db():
         retries=settings.DB_CONNECT_RETRIES,
         retry_delay_seconds=settings.DB_CONNECT_RETRY_DELAY_SECONDS,
     )
-    if settings.DATABASE_URL.startswith("sqlite://"):
-        Base.metadata.create_all(bind=engine)
-        return
-
     run_migrations()
-    Base.metadata.create_all(bind=engine)
 
 
 def run_migrations() -> None:

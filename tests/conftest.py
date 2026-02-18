@@ -4,7 +4,7 @@ from typing import Generator
 from datetime import datetime, timezone
 
 # Override settings for tests before importing app modules
-TEST_DATABASE_URL = "sqlite:///:memory:"
+TEST_DATABASE_URL = "sqlite:///./test_app.db"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only"
 os.environ["STRIPE_SECRET_KEY"] = "sk_test_mock"

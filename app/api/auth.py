@@ -30,11 +30,11 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 logger = logging.getLogger(__name__)
 
 
-class CamelModel(BaseModel):
+class AuthSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class RegisterRequest(CamelModel):
+class RegisterRequest(AuthSchema):
     display_name: str = Field(alias="displayName", min_length=1, max_length=255)
     email: EmailStr
     password: str
@@ -57,7 +57,7 @@ class RegisterRequest(CamelModel):
         return self
 
 
-class RegisterResponse(CamelModel):
+class RegisterResponse(AuthSchema):
     id: int
     email: str
     display_name: str | None = Field(default=None, alias="displayName")
@@ -67,7 +67,7 @@ class RegisterResponse(CamelModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
-class LoginRequest(CamelModel):
+class LoginRequest(AuthSchema):
     email: EmailStr
     password: str
 
@@ -77,7 +77,7 @@ class LoginRequest(CamelModel):
     )
 
 
-class TokenResponse(CamelModel):
+class TokenResponse(AuthSchema):
     access_token: str = Field(alias="accessToken")
     refresh_token: str = Field(alias="refreshToken")
     token_type: str = "bearer"
@@ -85,27 +85,27 @@ class TokenResponse(CamelModel):
     refresh_expires_in: int = Field(alias="refreshExpiresIn")
 
 
-class EmailVerifyRequest(CamelModel):
+class EmailVerifyRequest(AuthSchema):
     email: EmailStr
 
 
-class EmailVerifyConfirmRequest(CamelModel):
+class EmailVerifyConfirmRequest(AuthSchema):
     token: str
 
 
-class RefreshRequest(CamelModel):
+class RefreshRequest(AuthSchema):
     refresh_token: str = Field(alias="refreshToken")
 
 
-class LogoutRequest(CamelModel):
+class LogoutRequest(AuthSchema):
     refresh_token: str = Field(alias="refreshToken")
 
 
-class PasswordForgotRequest(CamelModel):
+class PasswordForgotRequest(AuthSchema):
     email: EmailStr
 
 
-class PasswordResetRequest(CamelModel):
+class PasswordResetRequest(AuthSchema):
     token: str
     password: str
     confirm_password: str = Field(alias="confirmPassword")
@@ -124,11 +124,11 @@ class PasswordResetRequest(CamelModel):
         return self
 
 
-class MessageResponse(CamelModel):
+class MessageResponse(AuthSchema):
     message: str
 
 
-class MeResponse(CamelModel):
+class MeResponse(AuthSchema):
     id: int
     email: str
     display_name: str | None = Field(default=None, alias="displayName")

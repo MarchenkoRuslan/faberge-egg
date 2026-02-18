@@ -61,37 +61,31 @@ def test_wait_for_db_raises_after_exhausted_retries(monkeypatch):
     assert connect_mock.call_count == 2
 
 
-def test_init_db_skips_alembic_for_sqlite(monkeypatch):
+def test_init_db_runs_alembic_for_sqlite(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
 
     wait_mock = MagicMock()
-    create_all_mock = MagicMock()
     run_migrations_mock = MagicMock()
 
     monkeypatch.setattr("app.db_init.wait_for_db", wait_mock)
-    monkeypatch.setattr("app.db_init.Base.metadata.create_all", create_all_mock)
-    monkeypatch.setattr("app.db_init.run_migrations", run_migrations_mock)
-
-    init_db()
-
-    wait_mock.assert_called_once()
-    create_all_mock.assert_called_once()
-    run_migrations_mock.assert_not_called()
-
-
-def test_init_db_runs_alembic_for_non_sqlite(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/app")
-
-    wait_mock = MagicMock()
-    create_all_mock = MagicMock()
-    run_migrations_mock = MagicMock()
-
-    monkeypatch.setattr("app.db_init.wait_for_db", wait_mock)
-    monkeypatch.setattr("app.db_init.Base.metadata.create_all", create_all_mock)
     monkeypatch.setattr("app.db_init.run_migrations", run_migrations_mock)
 
     init_db()
 
     wait_mock.assert_called_once()
     run_migrations_mock.assert_called_once()
-    create_all_mock.assert_called_once()
+
+
+def test_init_db_runs_alembic_for_non_sqlite(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/app")
+
+    wait_mock = MagicMock()
+    run_migrations_mock = MagicMock()
+
+    monkeypatch.setattr("app.db_init.wait_for_db", wait_mock)
+    monkeypatch.setattr("app.db_init.run_migrations", run_migrations_mock)
+
+    init_db()
+
+    wait_mock.assert_called_once()
+    run_migrations_mock.assert_called_once()
