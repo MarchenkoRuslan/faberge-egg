@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from app.db_init import wait_for_db
+from app.db_init import init_db, wait_for_db
 from app.models.database import _normalize_database_url
 
 
@@ -59,3 +59,33 @@ def test_wait_for_db_raises_after_exhausted_retries(monkeypatch):
         wait_for_db(retries=2, retry_delay_seconds=0)
 
     assert connect_mock.call_count == 2
+
+
+def test_init_db_runs_alembic_for_sqlite(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+
+    wait_mock = MagicMock()
+    run_migrations_mock = MagicMock()
+
+    monkeypatch.setattr("app.db_init.wait_for_db", wait_mock)
+    monkeypatch.setattr("app.db_init.run_migrations", run_migrations_mock)
+
+    init_db()
+
+    wait_mock.assert_called_once()
+    run_migrations_mock.assert_called_once()
+
+
+def test_init_db_runs_alembic_for_non_sqlite(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/app")
+
+    wait_mock = MagicMock()
+    run_migrations_mock = MagicMock()
+
+    monkeypatch.setattr("app.db_init.wait_for_db", wait_mock)
+    monkeypatch.setattr("app.db_init.run_migrations", run_migrations_mock)
+
+    init_db()
+
+    wait_mock.assert_called_once()
+    run_migrations_mock.assert_called_once()

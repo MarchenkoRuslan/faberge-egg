@@ -1,12 +1,13 @@
 import logging
 import time
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.config import settings
-from app.models.database import Base, engine
-from app.models import User, Lot, Order  # noqa: F401 - register models
+from app.models.database import _normalize_database_url, engine
+from app.models import Lot, OneTimeToken, Order, RefreshToken, User  # noqa: F401 - register models
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +43,32 @@ def init_db():
         retries=settings.DB_CONNECT_RETRIES,
         retry_delay_seconds=settings.DB_CONNECT_RETRY_DELAY_SECONDS,
     )
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
+
+
+def run_migrations() -> None:
+    """Apply Alembic migrations to the latest revision."""
+    try:
+        from alembic import command
+        from alembic.config import Config
+    except Exception as exc:  # pragma: no cover - environment/setup failure
+        raise RuntimeError(
+            "Alembic is required for non-sqlite runtime. Install dependencies from requirements.txt."
+        ) from exc
+
+    project_root = Path(__file__).resolve().parent.parent
+    alembic_ini = project_root / "alembic.ini"
+    script_location = project_root / "alembic"
+    if not alembic_ini.exists() or not script_location.exists():
+        raise RuntimeError("Alembic configuration is missing (alembic.ini or alembic/ directory not found).")
+
+    config = Config(str(alembic_ini))
+    config.set_main_option("script_location", str(script_location))
+    config.set_main_option("sqlalchemy.url", _normalize_database_url(settings.DATABASE_URL))
+    command.upgrade(config, "head")
 
 
 def seed_first_lot(db_session):
-    from app.models import Lot
-
     if db_session.query(Lot).filter(Lot.slug == "faberge-egg").first():
         return
     lot = Lot(

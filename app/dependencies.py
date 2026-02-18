@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -22,7 +21,10 @@ def get_current_user_optional(
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         sub = payload.get("sub")
+        token_type = payload.get("type")
         if sub is None:
+            return None
+        if token_type not in {None, "access"}:
             return None
         user_id = int(sub) if not isinstance(sub, int) else sub
     except (JWTError, ValueError):

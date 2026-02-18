@@ -14,20 +14,31 @@ from app.models.order import Order
 def test_full_order_flow(client, db, test_lot):
     """Test complete flow: register -> login -> get lots -> create order -> webhook."""
     # 1. Register user
-    register_response = client.post(
-        "/api/auth/register",
-        json={"email": "flowuser@example.com", "password": "password123"},
-    )
+    with patch("app.api.auth.send_verify_email") as mock_send:
+        register_response = client.post(
+            "/api/auth/register",
+            json={
+                "displayName": "Flow User",
+                "email": "flowuser@example.com",
+                "password": "password123",
+                "confirmPassword": "password123",
+                "termsAgree": True,
+            },
+        )
     assert register_response.status_code == status.HTTP_200_OK
     user_id = register_response.json()["id"]
-    
+
+    verify_token = mock_send.call_args.args[2]
+    verify_response = client.post("/api/auth/verify-email/confirm", json={"token": verify_token})
+    assert verify_response.status_code == status.HTTP_200_OK
+
     # 2. Login and get token
     login_response = client.post(
         "/api/auth/login",
         json={"email": "flowuser@example.com", "password": "password123"},
     )
     assert login_response.status_code == status.HTTP_200_OK
-    token = login_response.json()["access_token"]
+    token = login_response.json()["accessToken"]
     headers = {"Authorization": f"Bearer {token}"}
     
     # 3. Get list of lots

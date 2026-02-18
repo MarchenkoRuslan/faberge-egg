@@ -1,9 +1,10 @@
 import os
 from decimal import Decimal
 from typing import Generator
+from datetime import datetime, timezone
 
 # Override settings for tests before importing app modules
-TEST_DATABASE_URL = "sqlite:///:memory:"
+TEST_DATABASE_URL = "sqlite:///./test_app.db"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only"
 os.environ["STRIPE_SECRET_KEY"] = "sk_test_mock"
@@ -65,7 +66,12 @@ def test_user(db: Session) -> User:
 
     user = User(
         email="test@example.com",
+        display_name="Test User",
         hashed_password=get_password_hash("testpassword123"),
+        is_email_verified=True,
+        email_verified_at=datetime.now(timezone.utc),
+        terms_accepted_at=datetime.now(timezone.utc),
+        terms_accepted_ip="127.0.0.1",
     )
     db.add(user)
     db.commit()
@@ -80,7 +86,12 @@ def test_user2(db: Session) -> User:
 
     user = User(
         email="test2@example.com",
+        display_name="Test User 2",
         hashed_password=get_password_hash("testpassword123"),
+        is_email_verified=True,
+        email_verified_at=datetime.now(timezone.utc),
+        terms_accepted_at=datetime.now(timezone.utc),
+        terms_accepted_ip="127.0.0.1",
     )
     db.add(user)
     db.commit()
@@ -134,7 +145,7 @@ def auth_token(client: TestClient, test_user: User) -> str:
         json={"email": "test@example.com", "password": "testpassword123"},
     )
     assert response.status_code == 200
-    return response.json()["access_token"]
+    return response.json()["accessToken"]
 
 
 @pytest.fixture
