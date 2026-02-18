@@ -28,18 +28,27 @@ REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checko
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows (PowerShell): .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
 ```
 
 ## Environment Variables
 
-Create `.env` in repository root (you can copy from `.env.example`). `DATABASE_URL` is required.
+Create `.env` in repository root (you can copy from `.env.example`).
 
 ```env
+# REQUIRED (app startup fails without this)
 DATABASE_URL=postgresql://user:password@localhost:5432/marketplace
+
+# REQUIRED IN PRODUCTION (default is insecure)
 JWT_SECRET=change-me-in-production
+
+# REQUIRED FOR EMAIL FLOWS (register verification + password reset)
+SMTP_HOST=
+SMTP_FROM_EMAIL=
+
+# OPTIONAL: auth token settings
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
 JWT_REFRESH_EXPIRE_DAYS=30
@@ -47,28 +56,31 @@ EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES=1440
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
 EMAIL_RESEND_COOLDOWN_SECONDS=60
 
+# OPTIONAL: frontend links used in emails
 FRONTEND_URL=http://localhost:3000
 EMAIL_VERIFY_PATH=/verify-email
 PASSWORD_RESET_PATH=/restore-password
 
-SMTP_HOST=
+# OPTIONAL: SMTP details
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASSWORD=
-SMTP_FROM_EMAIL=
 SMTP_FROM_NAME=Marketplace API
 SMTP_USE_TLS=true
 
+# OPTIONAL: Stripe (required only if Stripe payments are enabled)
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 STRIPE_SUCCESS_URL=http://localhost:3000/success
 STRIPE_CANCEL_URL=http://localhost:3000/cancel
 
+# OPTIONAL: PayKilla (required only if PayKilla payments are enabled)
 PAYKILLA_API_KEY=
 PAYKILLA_WEBHOOK_SECRET=
 PAYKILLA_SUCCESS_URL=http://localhost:3000/success
 PAYKILLA_CANCEL_URL=http://localhost:3000/cancel
 
+# OPTIONAL: app behavior/runtime
 MIN_FRACTIONS=1
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 BASE_URL=http://localhost:8000
@@ -78,7 +90,7 @@ DB_CONNECT_RETRY_DELAY_SECONDS=1
 
 ## Migrations
 
-Alembic migrations are applied automatically on app startup for non-sqlite runtimes.
+Alembic migrations are applied automatically on app startup for all runtimes.
 
 Manual commands:
 
@@ -91,7 +103,11 @@ alembic revision -m "describe change"
 
 1. Create a Railway project and connect this repository.
 2. Add a PostgreSQL service.
-3. Configure required app variables (`JWT_SECRET`, `CORS_ORIGINS`, `BASE_URL`) and payment/email vars as needed.
+3. Configure app variables:
+   - Required: `DATABASE_URL` (use Railway Postgres reference), `JWT_SECRET`
+   - Recommended for deployment: `BASE_URL`, `CORS_ORIGINS`
+   - Required for email auth flows: `SMTP_HOST`, `SMTP_FROM_EMAIL`
+   - Optional: payment provider vars (Stripe/PayKilla) only when those methods are enabled.
 4. Configure provider webhooks:
    - Stripe: `https://<railway-domain>/webhooks/stripe`
    - PayKilla: `https://<railway-domain>/webhooks/paykilla`
