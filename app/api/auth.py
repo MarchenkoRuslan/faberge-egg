@@ -19,10 +19,9 @@ from app.services.auth_tokens import (
     issue_one_time_token,
     issue_refresh_token,
     revoke_all_refresh_tokens_for_user,
-    revoke_refresh_token,
     revoke_refresh_token_by_raw,
+    rotate_refresh_token,
     utcnow,
-    get_valid_refresh_token,
 )
 from app.services.email_service import send_password_reset_email, send_verify_email
 
@@ -213,13 +212,19 @@ def register(
         purpose=ONE_TIME_PURPOSE_EMAIL_VERIFY,
         expires_in_minutes=settings.EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES,
     )
-    db.commit()
-    db.refresh(user)
 
     try:
         send_verify_email(user.email, user.display_name, verify_token)
     except Exception:
+        db.rollback()
         logger.exception("Failed to send verification email to user id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send verification email",
+        )
+
+    db.commit()
+    db.refresh(user)
 
     return RegisterResponse(
         id=user.id,
@@ -283,10 +288,7 @@ def request_email_verification(
 
     latest = get_latest_one_time_token(db, user.id, ONE_TIME_PURPOSE_EMAIL_VERIFY)
     if latest and _to_utc(latest.created_at) > utcnow() - timedelta(seconds=settings.EMAIL_RESEND_COOLDOWN_SECONDS):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Please wait before requesting another verification email",
-        )
+        return generic
 
     verify_token, _ = issue_one_time_token(
         db=db,
@@ -294,12 +296,14 @@ def request_email_verification(
         purpose=ONE_TIME_PURPOSE_EMAIL_VERIFY,
         expires_in_minutes=settings.EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES,
     )
-    db.commit()
-
     try:
         send_verify_email(user.email, user.display_name, verify_token)
     except Exception:
+        db.rollback()
         logger.exception("Failed to resend verification email to user id=%s", user.id)
+        return generic
+
+    db.commit()
 
     return generic
 
@@ -343,28 +347,28 @@ def refresh_tokens(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Rotate refresh token and issue fresh access token."""
-    current = get_valid_refresh_token(db, body.refresh_token)
-    if not current:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
-
-    user = db.query(User).filter(User.id == current.user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
-
-    new_refresh, new_record = issue_refresh_token(
+    rotated = rotate_refresh_token(
         db=db,
-        user_id=user.id,
+        raw_token=body.refresh_token,
         expires_in_days=settings.JWT_REFRESH_EXPIRE_DAYS,
         ip=_get_client_ip(request),
         user_agent=_get_user_agent(request),
     )
-    revoke_refresh_token(current, replaced_by_id=new_record.id)
+    if not rotated:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    user_id, new_refresh = rotated
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
     db.commit()
 
     access_token = create_access_token(user.id)
@@ -407,12 +411,15 @@ def request_password_reset(
         purpose=ONE_TIME_PURPOSE_PASSWORD_RESET,
         expires_in_minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
     )
-    db.commit()
 
     try:
         send_password_reset_email(user.email, user.display_name, reset_token)
     except Exception:
+        db.rollback()
         logger.exception("Failed to send password reset email to user id=%s", user.id)
+        return generic
+
+    db.commit()
 
     return generic
 

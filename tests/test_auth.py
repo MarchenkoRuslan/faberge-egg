@@ -222,12 +222,24 @@ def test_verify_email_confirm_success(client):
 
 
 def test_verify_email_request_rate_limit(client):
-    with patch("app.api.auth.send_verify_email"):
+    with patch("app.api.auth.send_verify_email") as mock_send:
         register = client.post("/api/auth/register", json=_register_payload(email="resend@example.com"))
     assert register.status_code == status.HTTP_200_OK
 
     resend = client.post("/api/auth/verify-email/request", json={"email": "resend@example.com"})
-    assert resend.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+    assert resend.status_code == status.HTTP_200_OK
+    assert mock_send.call_count == 1
+
+
+def test_verify_email_request_send_failure_returns_generic_success(client, monkeypatch):
+    monkeypatch.setenv("EMAIL_RESEND_COOLDOWN_SECONDS", "0")
+    with patch("app.api.auth.send_verify_email"):
+        register = client.post("/api/auth/register", json=_register_payload(email="resend-fail@example.com"))
+    assert register.status_code == status.HTTP_200_OK
+
+    with patch("app.api.auth.send_verify_email", side_effect=RuntimeError("SMTP down")):
+        response = client.post("/api/auth/verify-email/request", json={"email": "resend-fail@example.com"})
+    assert response.status_code == status.HTTP_200_OK
 
 
 def test_password_reset_flow(client, test_user):
@@ -264,6 +276,21 @@ def test_password_forgot_nonexistent_user_is_generic(client):
         response = client.post("/api/auth/password/forgot", json={"email": "nobody@example.com"})
     assert response.status_code == status.HTTP_200_OK
     mock_send.assert_not_called()
+
+
+def test_password_forgot_send_failure_returns_generic_success(client, test_user):
+    with patch("app.api.auth.send_password_reset_email", side_effect=RuntimeError("SMTP down")):
+        response = client.post("/api/auth/password/forgot", json={"email": "test@example.com"})
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_register_email_send_failure_rolls_back_user(client, db):
+    with patch("app.api.auth.send_verify_email", side_effect=RuntimeError("SMTP down")):
+        response = client.post("/api/auth/register", json=_register_payload(email="nosend@example.com"))
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    user = db.query(User).filter(User.email == "nosend@example.com").first()
+    assert user is None
 
 
 def test_me_returns_current_user_profile(client, auth_headers):
