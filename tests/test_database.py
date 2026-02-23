@@ -1,10 +1,11 @@
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.db_init import init_db, wait_for_db
+from app.db_init import init_db, seed_first_lot, wait_for_db
 from app.models.database import _normalize_database_url
+from app.models.lot import Lot
 
 
 def test_normalize_database_url_postgres_scheme():
@@ -89,3 +90,34 @@ def test_init_db_runs_alembic_for_non_sqlite(monkeypatch):
 
     wait_mock.assert_called_once()
     run_migrations_mock.assert_called_once()
+
+
+def test_seed_first_lot_is_idempotent(db):
+    assert seed_first_lot(db) is True
+    assert seed_first_lot(db) is False
+
+    lots = db.query(Lot).filter(Lot.slug == "faberge-egg").all()
+    assert len(lots) == 1
+
+
+def test_seed_first_lot_handles_concurrent_insert_conflict():
+    db_session = MagicMock()
+    filtered_query = db_session.query.return_value.filter.return_value
+    filtered_query.first.side_effect = [None, object()]
+    db_session.commit.side_effect = IntegrityError("INSERT", {}, Exception("duplicate key"))
+
+    assert seed_first_lot(db_session) is False
+    db_session.rollback.assert_called_once()
+
+
+def test_seed_first_lot_reraises_unexpected_integrity_error():
+    db_session = MagicMock()
+    filtered_query = db_session.query.return_value.filter.return_value
+    filtered_query.first.side_effect = [None, None]
+    integrity_error = IntegrityError("INSERT", {}, Exception("different constraint"))
+    db_session.commit.side_effect = integrity_error
+
+    with pytest.raises(IntegrityError):
+        seed_first_lot(db_session)
+
+    db_session.rollback.assert_called_once()
