@@ -1,11 +1,11 @@
+﻿import hashlib
+import hmac
 import json
 from unittest.mock import patch
 
-import pytest
 import stripe
 from fastapi import status
 
-from app.models.lot import Lot
 from app.models.order import Order
 
 
@@ -23,7 +23,7 @@ def test_stripe_webhook_success(client, test_user, test_lot, db):
     db.add(order)
     db.commit()
     order_id = order.id
-    
+
     # Create Stripe event payload
     event_data = {
         "id": "evt_test",
@@ -35,24 +35,24 @@ def test_stripe_webhook_success(client, test_user, test_lot, db):
             }
         },
     }
-    
+
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.return_value = event_data
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(event_data).encode(),
             headers={"stripe-signature": "test_signature"},
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["received"] is True
-        
+
         # Verify order was updated
         db.refresh(order)
         assert order.status == "paid"
         assert order.external_payment_id == "cs_test_123"
-        
+
         # Verify lot fractions were incremented
         db.refresh(test_lot)
         assert test_lot.sold_special_fractions == 1000
@@ -72,7 +72,7 @@ def test_stripe_webhook_idempotent(client, test_user, test_lot, db):
     db.commit()
     initial_sold = test_lot.sold_special_fractions
     order_id = order.id
-    
+
     event_data = {
         "id": "evt_test",
         "type": "checkout.session.completed",
@@ -83,18 +83,18 @@ def test_stripe_webhook_idempotent(client, test_user, test_lot, db):
             }
         },
     }
-    
+
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.return_value = event_data
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(event_data).encode(),
             headers={"stripe-signature": "test_signature"},
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
-        
+
         # Verify fractions were not incremented again
         db.refresh(test_lot)
         assert test_lot.sold_special_fractions == initial_sold
@@ -104,13 +104,13 @@ def test_stripe_webhook_invalid_signature(client):
     """Test Stripe webhook with invalid signature."""
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.side_effect = stripe.SignatureVerificationError("Invalid", "sig")
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=b"{}",
             headers={"stripe-signature": "invalid"},
         )
-        
+
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "signature" in response.json()["detail"].lower()
 
@@ -119,13 +119,13 @@ def test_stripe_webhook_invalid_payload(client):
     """Test Stripe webhook with invalid payload."""
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.side_effect = ValueError("Invalid payload")
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=b"invalid json",
             headers={"stripe-signature": "test"},
         )
-        
+
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
@@ -141,16 +141,16 @@ def test_stripe_webhook_no_order_id(client):
             }
         },
     }
-    
+
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.return_value = event_data
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(event_data).encode(),
             headers={"stripe-signature": "test_signature"},
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["received"] is True
 
@@ -167,16 +167,16 @@ def test_stripe_webhook_order_not_found(client):
             }
         },
     }
-    
+
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.return_value = event_data
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(event_data).encode(),
             headers={"stripe-signature": "test_signature"},
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -187,16 +187,16 @@ def test_stripe_webhook_other_event_type(client):
         "type": "payment_intent.succeeded",
         "data": {"object": {}},
     }
-    
+
     with patch("stripe.Webhook.construct_event") as mock_construct:
         mock_construct.return_value = event_data
-        
+
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(event_data).encode(),
             headers={"stripe-signature": "test_signature"},
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -205,7 +205,7 @@ def test_stripe_webhook_no_secret(client):
     import os
     original_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
     os.environ["STRIPE_WEBHOOK_SECRET"] = ""
-    
+
     try:
         response = client.post(
             "/webhooks/stripe",
@@ -218,8 +218,169 @@ def test_stripe_webhook_no_secret(client):
             os.environ["STRIPE_WEBHOOK_SECRET"] = original_secret
 
 
-import hashlib
-import hmac
+def test_stripe_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_lot, db):
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=500,
+        amount_eur_cents=1500,
+        payment_method="stripe",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    event_data = {
+        "id": "evt_test",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_123",
+                "amount_total": 999,
+                "metadata": {"order_id": str(order.id)},
+            }
+        },
+    }
+
+    with patch("stripe.Webhook.construct_event") as mock_construct:
+        mock_construct.return_value = event_data
+        response = client.post(
+            "/webhooks/stripe",
+            content=json.dumps(event_data).encode(),
+            headers={"stripe-signature": "test_signature"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == 0
+
+
+def test_stripe_webhook_currency_mismatch_keeps_order_pending(client, test_user, test_lot, db):
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=500,
+        amount_eur_cents=1500,
+        payment_method="stripe",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    event_data = {
+        "id": "evt_test",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_123",
+                "amount_total": 1500,
+                "currency": "usd",
+                "metadata": {"order_id": str(order.id)},
+            }
+        },
+    }
+
+    with patch("stripe.Webhook.construct_event") as mock_construct:
+        mock_construct.return_value = event_data
+        response = client.post(
+            "/webhooks/stripe",
+            content=json.dumps(event_data).encode(),
+            headers={"stripe-signature": "test_signature"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == 0
+
+
+def test_stripe_webhook_wrong_payment_method_keeps_order_pending(client, test_user, test_lot, db):
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=500,
+        amount_eur_cents=1500,
+        payment_method="paykilla",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    event_data = {
+        "id": "evt_test",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_123",
+                "amount_total": 1500,
+                "metadata": {"order_id": str(order.id)},
+            }
+        },
+    }
+
+    with patch("stripe.Webhook.construct_event") as mock_construct:
+        mock_construct.return_value = event_data
+        response = client.post(
+            "/webhooks/stripe",
+            content=json.dumps(event_data).encode(),
+            headers={"stripe-signature": "test_signature"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == 0
+
+
+def test_stripe_webhook_capacity_exceeded_keeps_order_pending(client, test_user, test_lot, db):
+    test_lot.sold_special_fractions = test_lot.special_price_fractions_cap
+    db.commit()
+
+    order = Order(
+        user_id=test_user.id,
+        lot_id=test_lot.id,
+        fraction_count=1,
+        amount_eur_cents=3,
+        payment_method="stripe",
+        status="pending",
+    )
+    db.add(order)
+    db.commit()
+
+    event_data = {
+        "id": "evt_test",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_123",
+                "amount_total": 3,
+                "metadata": {"order_id": str(order.id)},
+            }
+        },
+    }
+
+    with patch("stripe.Webhook.construct_event") as mock_construct:
+        mock_construct.return_value = event_data
+        response = client.post(
+            "/webhooks/stripe",
+            content=json.dumps(event_data).encode(),
+            headers={"stripe-signature": "test_signature"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    db.refresh(order)
+    db.refresh(test_lot)
+    assert order.status == "pending"
+    assert order.external_payment_id is None
+    assert test_lot.sold_special_fractions == test_lot.special_price_fractions_cap
+
 
 def _paykilla_post(client, payload: dict, *, include_signature: bool = True, secret: str = "pk_whsec_test_mock"):
     raw_body = json.dumps(payload).encode()
@@ -391,7 +552,6 @@ def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_lot
     assert test_lot.sold_special_fractions == 0
 
 
-
 def test_paykilla_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_lot, db):
     """PayKilla amount mismatch must not mark order paid."""
     order = Order(
@@ -474,7 +634,6 @@ def test_stripe_webhook_non_positive_order_id(client):
     assert response.json()["received"] is True
 
 
-
 def test_paykilla_webhook_non_positive_amount_returns_400(client, test_user, test_lot, db):
     """amount_eur_cents must be a positive integer when provided."""
     order = Order(
@@ -508,8 +667,6 @@ def test_paykilla_webhook_non_positive_amount_returns_400(client, test_user, tes
 def test_paykilla_webhook_non_positive_order_id_with_valid_signature(client):
     """PayKilla callback should return 400 for non-positive order_id with valid signature."""
     from app.config import settings
-    import hmac
-    import hashlib
 
     payload = json.dumps({"order_id": 0}).encode()
     signature = hmac.new(

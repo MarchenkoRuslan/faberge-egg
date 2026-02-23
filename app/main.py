@@ -130,20 +130,19 @@ def _db_url_diagnostics(database_url: str) -> str:
     )
 
 
-def _validate_required_env_for_runtime() -> None:
-    errors = []
-    warnings = []
-    is_railway = _is_railway_runtime()
-
+def _validate_jwt_env(is_railway: bool, errors: list[str]) -> None:
     jwt_secret = settings.JWT_SECRET.strip()
     if not jwt_secret:
         errors.append("JWT_SECRET is required.")
-    elif is_railway and jwt_secret == "change-me-in-production":
+        return
+    if is_railway and jwt_secret == "change-me-in-production":
         errors.append(
             "JWT_SECRET uses insecure default value in Railway runtime. "
             "Set JWT_SECRET in Railway Variables."
         )
 
+
+def _validate_base_url_env(is_railway: bool, errors: list[str], warnings: list[str]) -> None:
     base_url, coerced_base = _normalize_http_url_for_railway(settings.BASE_URL, is_railway)
     if coerced_base:
         warnings.append(
@@ -152,39 +151,56 @@ def _validate_required_env_for_runtime() -> None:
     parsed_base = urlparse(base_url)
     if not _is_http_url(base_url):
         errors.append("BASE_URL must be an absolute http(s) URL, e.g. https://your-app.up.railway.app")
-    elif is_railway and _is_localhost(parsed_base.hostname):
+        return
+    if is_railway and _is_localhost(parsed_base.hostname):
         errors.append(
             "BASE_URL points to localhost in Railway runtime. "
             "Set BASE_URL to your public Railway domain."
         )
 
+
+def _validate_cors_origins_env(is_railway: bool, errors: list[str], warnings: list[str]) -> None:
     cors_raw = settings.CORS_ORIGINS.strip()
     origins, coerced_origins = _get_effective_cors_origins(cors_raw, is_railway)
     if not origins:
         errors.append("CORS_ORIGINS must contain at least one comma-separated origin URL.")
-    else:
-        invalid_origins = [origin for origin in origins if not _is_http_url(origin)]
-        if invalid_origins:
-            errors.append(f"CORS_ORIGINS contains invalid URL(s): {', '.join(invalid_origins)}")
-        if coerced_origins:
-            warnings.append(
-                "CORS_ORIGINS includes entries without scheme in Railway runtime and they were "
-                f"normalized to https://: {', '.join(coerced_origins)}"
-            )
+        return
 
-        if is_railway:
-            localhost_origins = [
-                origin for origin in origins if _is_localhost(urlparse(origin).hostname)
-            ]
-            if localhost_origins:
-                warnings.append(
-                    "CORS_ORIGINS includes localhost in Railway runtime: "
-                    f"{', '.join(localhost_origins)}"
-                )
+    invalid_origins = [origin for origin in origins if not _is_http_url(origin)]
+    if invalid_origins:
+        errors.append(f"CORS_ORIGINS contains invalid URL(s): {', '.join(invalid_origins)}")
 
+    if coerced_origins:
+        warnings.append(
+            "CORS_ORIGINS includes entries without scheme in Railway runtime and they were "
+            f"normalized to https://: {', '.join(coerced_origins)}"
+        )
+
+    if not is_railway:
+        return
+    localhost_origins = [origin for origin in origins if _is_localhost(urlparse(origin).hostname)]
+    if localhost_origins:
+        warnings.append(
+            "CORS_ORIGINS includes localhost in Railway runtime: "
+            f"{', '.join(localhost_origins)}"
+        )
+
+
+def _append_mailjet_startup_diagnostics(warnings: list[str]) -> None:
     mailjet_diagnostics, mailjet_warnings = get_mailjet_startup_diagnostics()
     logger.info("Mailjet diagnostics at startup: %s", mailjet_diagnostics)
     warnings.extend(mailjet_warnings)
+
+
+def _validate_required_env_for_runtime() -> None:
+    errors = []
+    warnings = []
+    is_railway = _is_railway_runtime()
+
+    _validate_jwt_env(is_railway, errors)
+    _validate_base_url_env(is_railway, errors, warnings)
+    _validate_cors_origins_env(is_railway, errors, warnings)
+    _append_mailjet_startup_diagnostics(warnings)
 
     if warnings:
         logger.warning("Startup environment warnings: %s", " | ".join(warnings))

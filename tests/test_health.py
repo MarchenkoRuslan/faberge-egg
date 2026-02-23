@@ -1,4 +1,4 @@
-from fastapi import status
+﻿from fastapi import status
 
 
 def test_root_returns_ok(client):

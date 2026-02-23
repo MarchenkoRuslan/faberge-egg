@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 
 from app.main import (
     _db_url_diagnostics,

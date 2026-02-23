@@ -1,9 +1,15 @@
-import os
+﻿import os
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Generator
-from datetime import datetime, timezone
 
-# Override settings for tests before importing app modules
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+# Override settings for tests before importing app modules.
 TEST_DATABASE_URL = "sqlite:///./test_app.db"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only"
@@ -12,18 +18,7 @@ os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_mock"
 os.environ["PAYKILLA_API_KEY"] = "pk_test_mock"
 os.environ["PAYKILLA_WEBHOOK_SECRET"] = "pk_whsec_test_mock"
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from app.main import app
-from app.models.database import Base, get_db
-from app.models.lot import Lot
-from app.models.user import User
-
-# Create test database engine
+# Create test database engine.
 test_engine = create_engine(
     TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
@@ -35,6 +30,8 @@ TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_eng
 @pytest.fixture(scope="function")
 def db() -> Generator[Session, None, None]:
     """Create a fresh database for each test."""
+    from app.models.database import Base
+
     Base.metadata.create_all(bind=test_engine)
     db_session = TestSessionLocal()
     try:
@@ -47,6 +44,8 @@ def db() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def client(db: Session) -> Generator[TestClient, None, None]:
     """Create a test client with database override."""
+    from app.main import app
+    from app.models.database import get_db
 
     def override_get_db():
         try:
@@ -60,9 +59,10 @@ def client(db: Session) -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture
-def test_user(db: Session) -> User:
+def test_user(db: Session):
     """Create a test user."""
     from app.api.auth import get_password_hash
+    from app.models.user import User
 
     user = User(
         email="test@example.com",
@@ -80,9 +80,10 @@ def test_user(db: Session) -> User:
 
 
 @pytest.fixture
-def test_user2(db: Session) -> User:
+def test_user2(db: Session):
     """Create a second test user."""
     from app.api.auth import get_password_hash
+    from app.models.user import User
 
     user = User(
         email="test2@example.com",
@@ -100,8 +101,10 @@ def test_user2(db: Session) -> User:
 
 
 @pytest.fixture
-def test_lot(db: Session) -> Lot:
+def test_lot(db: Session):
     """Create a test lot."""
+    from app.models.lot import Lot
+
     lot = Lot(
         name="Test Lot",
         slug="test-lot",
@@ -119,8 +122,10 @@ def test_lot(db: Session) -> Lot:
 
 
 @pytest.fixture
-def test_lot_inactive(db: Session) -> Lot:
+def test_lot_inactive(db: Session):
     """Create an inactive test lot."""
+    from app.models.lot import Lot
+
     lot = Lot(
         name="Inactive Lot",
         slug="inactive-lot",
@@ -138,7 +143,7 @@ def test_lot_inactive(db: Session) -> Lot:
 
 
 @pytest.fixture
-def auth_token(client: TestClient, test_user: User) -> str:
+def auth_token(client: TestClient, test_user) -> str:
     """Get auth token for test user."""
     response = client.post(
         "/api/auth/login",

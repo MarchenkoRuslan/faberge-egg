@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Lot, Order, get_db
+from app.models import get_db
+from app.services.payment_settlement import (
+    PaymentSettlementResult,
+    PaymentSettlementStatus,
+    settle_order_payment,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -42,63 +47,81 @@ def _verify_paykilla_signature(raw_body: bytes, signature: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature")
 
 
-def mark_order_paid_and_increment_lot(
-    order_id: int,
-    external_id: str | None,
-    callback_amount_cents: int | None,
-    db: Session,
-) -> bool:
-    """Mark order as paid and increment lot sold fractions. Returns True if successful."""
+def _parse_paykilla_json_body(raw_body: bytes) -> dict:
     try:
-        order = db.query(Order).filter(Order.id == order_id).with_for_update().first()
-        if not order:
-            logger.warning(f"Order {order_id} not found")
-            return False
-
-        if order.payment_method != "paykilla":
-            logger.warning(f"Order {order_id} payment method is {order.payment_method}, not paykilla")
-            return False
-
-        if order.status == "paid":
-            logger.info(f"Order {order_id} already paid, skipping")
-            return True
-
-        if callback_amount_cents is not None and callback_amount_cents != order.amount_eur_cents:
-            logger.warning(
-                "PayKilla amount mismatch for order %s: expected=%s, received=%s",
-                order_id,
-                order.amount_eur_cents,
-                callback_amount_cents,
-            )
-            return False
-
-        lot = db.query(Lot).filter(Lot.id == order.lot_id).with_for_update().first()
-        if not lot:
-            logger.error(f"Lot {order.lot_id} not found for order {order_id}")
-            db.rollback()
-            return False
+        body = json.loads(raw_body)
+    except Exception as exc:
+        logger.error("Invalid JSON in PayKilla webhook: %s", exc)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON")
+    return body
 
 
-        remaining = max(0, lot.special_price_fractions_cap - (lot.sold_special_fractions or 0))
-        if order.fraction_count > remaining:
-            logger.warning(
-                "Cannot mark order %s as paid: %s fractions requested, %s remaining",
-                order_id,
-                order.fraction_count,
-                remaining,
-            )
-            db.rollback()
-            return False
-        lot.sold_special_fractions = (lot.sold_special_fractions or 0) + order.fraction_count
-        order.status = "paid"
-        order.external_payment_id = external_id
-        db.commit()
-        logger.info(f"Order {order_id} marked as paid, lot {lot.id} updated")
-        return True
-    except Exception as e:
-        logger.error(f"Error processing order {order_id}: {e}", exc_info=True)
-        db.rollback()
-        return False
+def _parse_positive_int(value: object, *, field_name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        logger.error("Invalid %s format: %s, error: %s", field_name, value, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} must be integer",
+        ) from exc
+    if parsed <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} must be positive",
+        )
+    return parsed
+
+
+def _parse_order_id(body: dict) -> int:
+    if body.get("order_id") is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_id required")
+    return _parse_positive_int(body.get("order_id"), field_name="order_id")
+
+
+def _parse_optional_amount(body: dict) -> int | None:
+    if body.get("amount_eur_cents") is None:
+        return None
+    return _parse_positive_int(body.get("amount_eur_cents"), field_name="amount_eur_cents")
+
+
+def _log_paykilla_settlement_result(result: PaymentSettlementResult) -> None:
+    if result.status == PaymentSettlementStatus.PAID:
+        logger.info("Order %s marked as paid, lot %s updated", result.order_id, result.lot_id)
+        return
+    if result.status == PaymentSettlementStatus.ALREADY_PAID:
+        logger.info("Order %s already paid, skipping", result.order_id)
+        return
+    if result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
+        logger.warning("Order %s not found", result.order_id)
+        return
+    if result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
+        logger.warning(
+            "Order %s payment method is %s, not paykilla",
+            result.order_id,
+            result.actual_payment_method,
+        )
+        return
+    if result.status == PaymentSettlementStatus.AMOUNT_MISMATCH:
+        logger.warning(
+            "PayKilla amount mismatch for order %s: expected=%s, received=%s",
+            result.order_id,
+            result.expected_amount_cents,
+            result.received_amount_cents,
+        )
+        return
+    if result.status == PaymentSettlementStatus.LOT_NOT_FOUND:
+        logger.error("Lot %s not found for order %s", result.lot_id, result.order_id)
+        return
+    if result.status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
+        logger.warning(
+            "Cannot mark order %s as paid: %s fractions requested, %s remaining",
+            result.order_id,
+            result.requested_fractions,
+            result.remaining_fractions,
+        )
 
 
 @router.post(
@@ -118,43 +141,29 @@ async def paykilla_webhook(
     signature = request.headers.get("x-paykilla-signature")
     _verify_paykilla_signature(raw_body, signature)
 
-    try:
-        body = json.loads(raw_body)
-    except Exception as e:
-        logger.error(f"Invalid JSON in PayKilla webhook: {e}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON")
-
-    order_id = body.get("order_id")
-    if order_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_id required")
-
-    try:
-        order_id = int(order_id)
-    except (TypeError, ValueError) as e:
-        logger.error(f"Invalid order_id format: {order_id}, error: {e}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_id must be integer")
-
-    if order_id <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="order_id must be positive")
+    body = _parse_paykilla_json_body(raw_body)
+    order_id = _parse_order_id(body)
 
     payment_status = body.get("status")
     if not is_successful_payment_status(payment_status):
-        logger.info(f"Ignoring PayKilla webhook for order {order_id} with status: {payment_status}")
+        logger.info("Ignoring PayKilla webhook for order %s with status: %s", order_id, payment_status)
         return {"received": True}
 
     external_id = body.get("transaction_id") or body.get("payment_id")
+    callback_amount_cents = _parse_optional_amount(body)
 
-    callback_amount_cents = None
-    if body.get("amount_eur_cents") is not None:
-        try:
-            callback_amount_cents = int(body.get("amount_eur_cents"))
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="amount_eur_cents must be integer")
-        if callback_amount_cents <= 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="amount_eur_cents must be positive")
+    try:
+        result = settle_order_payment(
+            db,
+            order_id=order_id,
+            expected_payment_method="paykilla",
+            external_payment_id=external_id,
+            callback_amount_cents=callback_amount_cents,
+        )
+    except Exception as exc:
+        logger.error("Error processing order %s: %s", order_id, exc, exc_info=True)
+        return {"received": True}
 
-    success = mark_order_paid_and_increment_lot(order_id, external_id, callback_amount_cents, db)
-    if not success:
-        logger.warning(f"Failed to process PayKilla webhook for order {order_id}")
+    _log_paykilla_settlement_result(result)
 
     return {"received": True}

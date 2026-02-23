@@ -51,7 +51,7 @@ def list_lots(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Returns all active lots with remaining special fractions and prices."""
-    lots = db.query(Lot).filter(Lot.is_active == True).all()
+    lots = db.query(Lot).filter(Lot.is_active.is_(True)).all()
     return [lot_to_list_response(lot) for lot in lots]
 
 
@@ -65,7 +65,7 @@ def get_lot(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Returns one lot with full details for the object card (remaining fractions, prices, limits)."""
-    lot = db.query(Lot).filter(Lot.id == lot_id, Lot.is_active == True).first()
+    lot = db.query(Lot).filter(Lot.id == lot_id, Lot.is_active.is_(True)).first()
     if not lot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot not found")
     return lot_to_detail_response(lot)

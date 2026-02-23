@@ -24,7 +24,7 @@ def create_checkout_session(
                 "price_data": {
                     "currency": "eur",
                     "product_data": {
-                        "name": f"{lot_name} — {fraction_count} fraction(s)",
+                        "name": f"{lot_name} - {fraction_count} fraction(s)",
                     },
                     "unit_amount": amount_eur_cents,
                 },

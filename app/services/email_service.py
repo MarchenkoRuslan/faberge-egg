@@ -165,6 +165,120 @@ def _log_mailjet_retry(
     )
 
 
+def _build_mailjet_message(
+    *,
+    from_email: str,
+    to_email: str,
+    to_name: str | None,
+    subject: str,
+    text_body: str,
+    html_body: str | None,
+) -> dict[str, object]:
+    recipient: dict[str, str] = {"Email": to_email}
+    if to_name:
+        recipient["Name"] = to_name
+
+    message: dict[str, object] = {
+        "From": {
+            "Email": from_email,
+            "Name": settings.MAILJET_FROM_NAME,
+        },
+        "To": [recipient],
+        "Subject": subject,
+        "TextPart": text_body,
+    }
+    if html_body is not None:
+        message["HTMLPart"] = html_body
+    return message
+
+
+def _send_mailjet_request(
+    api_key: str,
+    secret_key: str,
+    message: dict[str, object],
+) -> httpx.Response:
+    return httpx.post(
+        settings.MAILJET_API_URL,
+        auth=(api_key, secret_key),
+        json={"Messages": [message]},
+        timeout=settings.MAILJET_TIMEOUT_SECONDS,
+    )
+
+
+def _response_json_or_none(response: httpx.Response) -> object | None:
+    try:
+        return response.json()
+    except (ValueError, httpx.DecodingError):
+        return None
+
+
+def _raise_for_mailjet_success_payload(
+    *,
+    response: httpx.Response,
+    response_json: object,
+    endpoint_host: str,
+    to_email: str,
+    subject: str,
+    attempt: int,
+    max_attempts: int,
+) -> dict:
+    if not isinstance(response_json, dict):
+        _log_mailjet_failure(
+            outcome="invalid_response",
+            endpoint_host=endpoint_host,
+            to_email=to_email,
+            subject=subject,
+            detail="invalid JSON response",
+            attempt=attempt,
+            max_attempts=max_attempts,
+            http_status=response.status_code,
+        )
+        raise RuntimeError(f"Mailjet send failed: invalid JSON response (HTTP {response.status_code})")
+
+    messages = response_json.get("Messages")
+    if not isinstance(messages, list) or not messages or not isinstance(messages[0], dict):
+        _log_mailjet_failure(
+            outcome="invalid_response",
+            endpoint_host=endpoint_host,
+            to_email=to_email,
+            subject=subject,
+            detail="missing Messages",
+            attempt=attempt,
+            max_attempts=max_attempts,
+            http_status=response.status_code,
+        )
+        raise RuntimeError("Mailjet send failed: invalid response payload (missing Messages)")
+
+    first_message = messages[0]
+    status = str(first_message.get("Status", "")).lower()
+    if status != "success":
+        detail = _mailjet_message_error_detail(first_message)
+        _log_mailjet_failure(
+            outcome="message_error",
+            endpoint_host=endpoint_host,
+            to_email=to_email,
+            subject=subject,
+            detail=detail,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            http_status=response.status_code,
+        )
+        raise RuntimeError(f"Mailjet send failed: {detail}")
+    return first_message
+
+
+def _extract_mailjet_response_ids(first_message: dict) -> tuple[object | None, object | None]:
+    message_id = None
+    message_uuid = None
+    response_recipients = first_message.get("To")
+    if isinstance(response_recipients, list) and response_recipients:
+        first_recipient = response_recipients[0]
+        if isinstance(first_recipient, dict):
+            message_id = first_recipient.get("MessageID")
+            message_uuid = first_recipient.get("MessageUUID")
+    return message_id, message_uuid
+
+
 def send_email(
     to_email: str,
     subject: str,
@@ -181,31 +295,19 @@ def send_email(
             _DEFAULT_MAILJET_HOST,
         )
 
-    recipient: dict[str, str] = {"Email": to_email}
-    if to_name:
-        recipient["Name"] = to_name
-
-    message: dict[str, object] = {
-        "From": {
-            "Email": from_email,
-            "Name": settings.MAILJET_FROM_NAME,
-        },
-        "To": [recipient],
-        "Subject": subject,
-        "TextPart": text_body,
-    }
-    if html_body is not None:
-        message["HTMLPart"] = html_body
+    message = _build_mailjet_message(
+        from_email=from_email,
+        to_email=to_email,
+        to_name=to_name,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
 
     max_attempts = _MAILJET_MAX_RETRIES + 1
     for attempt in range(1, max_attempts + 1):
         try:
-            response = httpx.post(
-                settings.MAILJET_API_URL,
-                auth=(api_key, secret_key),
-                json={"Messages": [message]},
-                timeout=settings.MAILJET_TIMEOUT_SECONDS,
-            )
+            response = _send_mailjet_request(api_key, secret_key, message)
         except httpx.RequestError as exc:
             retryable = attempt < max_attempts
             _log_mailjet_failure(
@@ -231,11 +333,7 @@ def send_email(
                 continue
             raise RuntimeError("Mailjet send request failed") from exc
 
-        response_json = None
-        try:
-            response_json = response.json()
-        except (ValueError, httpx.DecodingError):
-            response_json = None
+        response_json = _response_json_or_none(response)
 
         if response.status_code >= 400:
             detail = _mailjet_http_error_detail(response, response_json)
@@ -264,57 +362,16 @@ def send_email(
                 continue
             raise RuntimeError(f"Mailjet send failed with HTTP {response.status_code}: {detail}")
 
-        if not isinstance(response_json, dict):
-            _log_mailjet_failure(
-                outcome="invalid_response",
-                endpoint_host=endpoint_host,
-                to_email=to_email,
-                subject=subject,
-                detail="invalid JSON response",
-                attempt=attempt,
-                max_attempts=max_attempts,
-                http_status=response.status_code,
-            )
-            raise RuntimeError(f"Mailjet send failed: invalid JSON response (HTTP {response.status_code})")
-
-        messages = response_json.get("Messages")
-        if not isinstance(messages, list) or not messages or not isinstance(messages[0], dict):
-            _log_mailjet_failure(
-                outcome="invalid_response",
-                endpoint_host=endpoint_host,
-                to_email=to_email,
-                subject=subject,
-                detail="missing Messages",
-                attempt=attempt,
-                max_attempts=max_attempts,
-                http_status=response.status_code,
-            )
-            raise RuntimeError("Mailjet send failed: invalid response payload (missing Messages)")
-
-        first_message = messages[0]
-        status = str(first_message.get("Status", "")).lower()
-        if status != "success":
-            detail = _mailjet_message_error_detail(first_message)
-            _log_mailjet_failure(
-                outcome="message_error",
-                endpoint_host=endpoint_host,
-                to_email=to_email,
-                subject=subject,
-                detail=detail,
-                attempt=attempt,
-                max_attempts=max_attempts,
-                http_status=response.status_code,
-            )
-            raise RuntimeError(f"Mailjet send failed: {detail}")
-
-        message_id = None
-        message_uuid = None
-        response_recipients = first_message.get("To")
-        if isinstance(response_recipients, list) and response_recipients:
-            first_recipient = response_recipients[0]
-            if isinstance(first_recipient, dict):
-                message_id = first_recipient.get("MessageID")
-                message_uuid = first_recipient.get("MessageUUID")
+        first_message = _raise_for_mailjet_success_payload(
+            response=response,
+            response_json=response_json,
+            endpoint_host=endpoint_host,
+            to_email=to_email,
+            subject=subject,
+            attempt=attempt,
+            max_attempts=max_attempts,
+        )
+        message_id, message_uuid = _extract_mailjet_response_ids(first_message)
 
         logger.info(
             "Mailjet send success outcome=success host=%s http_status=%s from_email=%s to_email=%s subject=%s "

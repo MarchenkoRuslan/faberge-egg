@@ -1,5 +1,4 @@
-import pytest
-from fastapi import status
+﻿from fastapi import status
 
 
 def test_list_lots_empty(client):
@@ -16,7 +15,7 @@ def test_list_lots_success(client, test_lot):
     data = response.json()
     assert isinstance(data, list)
     assert len(data) == 1
-    
+
     lot_data = data[0]
     assert lot_data["id"] == test_lot.id
     assert lot_data["name"] == "Test Lot"
@@ -42,7 +41,7 @@ def test_list_lots_remaining_calculation(client, db, test_lot):
     # Update lot to have some sold fractions
     test_lot.sold_special_fractions = 500_000
     db.commit()
-    
+
     response = client.get("/api/lots")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -54,7 +53,7 @@ def test_list_lots_remaining_never_negative(client, db, test_lot):
     # Set sold fractions higher than cap
     test_lot.sold_special_fractions = 5_000_000
     db.commit()
-    
+
     response = client.get("/api/lots")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -66,7 +65,7 @@ def test_get_lot_by_id_success(client, test_lot):
     response = client.get(f"/api/lots/{test_lot.id}")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    
+
     assert data["id"] == test_lot.id
     assert data["name"] == "Test Lot"
     assert data["slug"] == "test-lot"
@@ -97,7 +96,7 @@ def test_get_lot_remaining_calculation(client, db, test_lot):
     """Test remaining fractions calculation in get lot."""
     test_lot.sold_special_fractions = 1_000_000
     db.commit()
-    
+
     response = client.get(f"/api/lots/{test_lot.id}")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -109,7 +108,7 @@ def test_get_lot_all_fields(client, test_lot):
     response = client.get(f"/api/lots/{test_lot.id}")
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    
+
     required_fields = [
         "id",
         "name",

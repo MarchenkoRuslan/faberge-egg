@@ -1,6 +1,5 @@
-from unittest.mock import patch
+﻿from unittest.mock import patch
 
-import pytest
 from fastapi import status
 
 from app.models.order import Order
@@ -11,7 +10,7 @@ def test_create_order_stripe_success(client, test_user, test_lot, auth_headers, 
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
-        
+
         response = client.post(
             "/api/orders",
             json={
@@ -21,14 +20,14 @@ def test_create_order_stripe_success(client, test_user, test_lot, auth_headers, 
             },
             headers=auth_headers,
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "order_id" in data
         assert data["checkout_url"] == "https://checkout.stripe.com/test"
         assert data["session_id"] == "cs_test_123"
         assert data["payment_method"] == "stripe"
-        
+
         # Verify order was created
         order = db.query(Order).filter(Order.id == data["order_id"]).first()
         assert order is not None
@@ -43,7 +42,7 @@ def test_create_order_paykilla_success(client, test_user, test_lot, auth_headers
     """Test successful order creation with PayKilla."""
     with patch("app.services.paykilla_service.create_payment") as mock_paykilla:
         mock_paykilla.return_value = "https://paykilla.com/checkout?order_id=1"
-        
+
         response = client.post(
             "/api/orders",
             json={
@@ -53,7 +52,7 @@ def test_create_order_paykilla_success(client, test_user, test_lot, auth_headers
             },
             headers=auth_headers,
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "order_id" in data
@@ -72,7 +71,7 @@ def test_create_order_min_fractions_validation(client, test_lot, auth_headers):
         },
         headers=auth_headers,
     )
-    
+
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "minimum" in response.json()["detail"].lower()
 
@@ -88,7 +87,7 @@ def test_create_order_max_fractions_validation(client, test_lot, auth_headers):
         },
         headers=auth_headers,
     )
-    
+
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "available" in response.json()["detail"].lower() or "only" in response.json()["detail"].lower()
 
@@ -98,7 +97,7 @@ def test_create_order_lot_not_found(client, auth_headers):
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
-        
+
         response = client.post(
             "/api/orders",
             json={
@@ -108,7 +107,7 @@ def test_create_order_lot_not_found(client, auth_headers):
             },
             headers=auth_headers,
         )
-        
+
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "not found" in response.json()["detail"].lower()
 
@@ -124,7 +123,7 @@ def test_create_order_inactive_lot(client, test_lot_inactive, auth_headers):
         },
         headers=auth_headers,
     )
-    
+
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -138,7 +137,7 @@ def test_create_order_unauthorized(client, test_lot):
             "payment_method": "stripe",
         },
     )
-    
+
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
@@ -147,7 +146,7 @@ def test_create_order_price_calculation(client, test_lot, auth_headers, db):
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
-        
+
         fraction_count = 1000
         response = client.post(
             "/api/orders",
@@ -158,9 +157,9 @@ def test_create_order_price_calculation(client, test_lot, auth_headers, db):
             },
             headers=auth_headers,
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
-        
+
         # Price should be 0.03 * 100 * 1000 = 3000 cents
         expected_cents = int(0.03 * 100 * 1000)
         order = db.query(Order).filter(Order.id == response.json()["order_id"]).first()
@@ -172,7 +171,7 @@ def test_create_order_custom_urls(client, test_lot, auth_headers):
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
-        
+
         response = client.post(
             "/api/orders",
             json={
@@ -184,7 +183,7 @@ def test_create_order_custom_urls(client, test_lot, auth_headers):
             },
             headers=auth_headers,
         )
-        
+
         assert response.status_code == status.HTTP_200_OK
         # Verify Stripe was called with custom URLs
         call_args = mock_stripe.call_args
@@ -196,7 +195,7 @@ def test_create_order_stripe_error(client, test_lot, auth_headers):
     """Test order creation when Stripe service fails."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.side_effect = ValueError("Stripe API error")
-        
+
         response = client.post(
             "/api/orders",
             json={
@@ -206,7 +205,7 @@ def test_create_order_stripe_error(client, test_lot, auth_headers):
             },
             headers=auth_headers,
         )
-        
+
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
@@ -221,7 +220,7 @@ def test_create_order_unsupported_payment_method(client, test_lot, auth_headers)
         },
         headers=auth_headers,
     )
-    
+
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     assert any(err.get("type") in {"literal_error", "enum"} for err in response.json()["detail"])
 
@@ -248,13 +247,13 @@ def test_get_my_orders_success(client, test_user, test_lot, auth_headers, db):
     db.add(order1)
     db.add(order2)
     db.commit()
-    
+
     response = client.get("/api/orders/me", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert isinstance(data, list)
     assert len(data) >= 2
-    
+
     # Check that orders belong to the user
     for order in data:
         assert order["lot_id"] == test_lot.id
@@ -283,11 +282,11 @@ def test_get_my_orders_only_current_user(client, test_user, test_user2, test_lot
     db.add(order1)
     db.add(order2)
     db.commit()
-    
+
     response = client.get("/api/orders/me", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    
+
     # Should only return orders for test_user
     user_order_ids = [o["id"] for o in data if o["id"] == order1.id]
     assert len(user_order_ids) >= 1
@@ -312,7 +311,7 @@ def test_get_order_status_success(client, test_user, test_lot, auth_headers, db)
     )
     db.add(order)
     db.commit()
-    
+
     response = client.get(f"/api/orders/{order.id}/status", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -340,7 +339,7 @@ def test_get_order_status_other_user(client, test_user2, test_lot, auth_headers,
     )
     db.add(order)
     db.commit()
-    
+
     response = client.get(f"/api/orders/{order.id}/status", headers=auth_headers)
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -357,7 +356,7 @@ def test_get_order_status_unauthorized(client, test_user, test_lot, db):
     )
     db.add(order)
     db.commit()
-    
+
     response = client.get(f"/api/orders/{order.id}/status")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
