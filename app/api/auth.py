@@ -243,6 +243,12 @@ def register(
             user.id,
         )
         send_verify_email(user.email, user.display_name, verify_token)
+        logger.info(
+            "register verification_email_sent_ok request_id=%s email=%s user_id=%s",
+            request_id,
+            masked_email,
+            user.id,
+        )
     except Exception:
         db.rollback()
         logger.exception(

@@ -13,11 +13,26 @@ from app.models import get_db
 from app.services.email_service import get_mailjet_startup_diagnostics
 from app.webhooks import paykilla_callback, stripe_webhook
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Configure logging: flush after each record so logs appear immediately in Railway/containers
+_log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+
+class _FlushingStreamHandler(logging.StreamHandler):
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        self.flush()
+
+
+def _configure_logging() -> None:
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if not root.handlers:
+        handler = _FlushingStreamHandler()
+        handler.setFormatter(logging.Formatter(_log_format))
+        root.addHandler(handler)
+
+
+_configure_logging()
 logger = logging.getLogger("app.startup")
 
 
