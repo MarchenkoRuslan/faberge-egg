@@ -15,12 +15,36 @@ from app.webhooks import paykilla_callback, stripe_webhook
 
 # Configure logging: flush after each record so logs appear immediately in Railway/containers
 _log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+_UVICORN_LOGGER_NAMES = ["uvicorn", "uvicorn.error", "uvicorn.access"]
 
 
 class _FlushingStreamHandler(logging.StreamHandler):
     def emit(self, record: logging.LogRecord) -> None:
         super().emit(record)
         self.flush()
+
+
+def _redirect_logger_handlers_to_stdout(logger_names: list[str]) -> int:
+    changed_handlers = 0
+    for logger_name in logger_names:
+        for handler in logging.getLogger(logger_name).handlers:
+            if isinstance(handler, logging.StreamHandler) and handler.stream is sys.stderr:
+                handler.stream = sys.stdout
+                changed_handlers += 1
+    return changed_handlers
+
+
+def _is_railway_runtime() -> bool:
+    return any(
+        os.getenv(env_name)
+        for env_name in (
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PUBLIC_DOMAIN",
+        )
+    )
 
 
 def _configure_logging() -> None:
@@ -30,6 +54,8 @@ def _configure_logging() -> None:
         handler = _FlushingStreamHandler(stream=sys.stdout)
         handler.setFormatter(logging.Formatter(_log_format))
         root.addHandler(handler)
+    if _is_railway_runtime():
+        _redirect_logger_handlers_to_stdout(_UVICORN_LOGGER_NAMES)
 
 
 _configure_logging()
@@ -77,19 +103,6 @@ def _get_effective_cors_origins(cors_raw: str, is_railway: bool) -> tuple[list[s
             coerced_origins.append(origin)
 
     return normalized_origins, coerced_origins
-
-
-def _is_railway_runtime() -> bool:
-    return any(
-        os.getenv(env_name)
-        for env_name in (
-            "RAILWAY_PROJECT_ID",
-            "RAILWAY_SERVICE_ID",
-            "RAILWAY_ENVIRONMENT",
-            "RAILWAY_ENVIRONMENT_NAME",
-            "RAILWAY_PUBLIC_DOMAIN",
-        )
-    )
 
 
 def _validate_database_url_for_runtime(database_url: str) -> None:
@@ -247,6 +260,8 @@ def _run_startup_database_tasks() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database_url = "<unavailable>"
+    if _is_railway_runtime():
+        _redirect_logger_handlers_to_stdout(_UVICORN_LOGGER_NAMES)
     logger.info("Application startup initiated.")
     try:
         database_url = settings.DATABASE_URL
