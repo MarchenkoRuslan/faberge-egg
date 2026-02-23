@@ -40,8 +40,38 @@ def test_register_success(client, db):
 
 def test_register_duplicate_email(client, test_user):
     response = client.post("/api/auth/register", json=_register_payload(email=test_user.email))
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.status_code == status.HTTP_409_CONFLICT
     assert "already registered" in response.json()["detail"].lower()
+
+
+def test_register_duplicate_email_does_not_send_verify_email(client, test_user):
+    with patch("app.api.auth.send_verify_email") as mock_send:
+        response = client.post("/api/auth/register", json=_register_payload(email=test_user.email))
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    mock_send.assert_not_called()
+
+
+def test_register_duplicate_unverified_email_returns_conflict(client, db):
+    from app.api.auth import get_password_hash
+
+    user = User(
+        email="unverified-duplicate@example.com",
+        display_name="Unverified Duplicate",
+        hashed_password=get_password_hash("testpassword123"),
+        is_email_verified=False,
+        terms_accepted_at=datetime.now(timezone.utc),
+        terms_accepted_ip="127.0.0.1",
+    )
+    db.add(user)
+    db.commit()
+
+    with patch("app.api.auth.send_verify_email") as mock_send:
+        response = client.post("/api/auth/register", json=_register_payload(email=user.email))
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "already registered" in response.json()["detail"].lower()
+    mock_send.assert_not_called()
 
 
 def test_register_password_too_short(client):

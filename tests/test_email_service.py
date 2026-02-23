@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.services import email_service
+from app.utils.redaction import mask_email
 
 
 class FakeHttpxResponse:
@@ -69,6 +70,21 @@ def _install_fake_post(monkeypatch, response: FakeHttpxResponse):
     return calls
 
 
+def _install_fake_post_sequence(monkeypatch, responses_or_exceptions: list[object]):
+    calls: list[dict] = []
+    queue = list(responses_or_exceptions)
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(email_service.httpx, "post", fake_post)
+    return calls
+
+
 def test_send_email_posts_expected_mailjet_payload(monkeypatch):
     _set_mailjet_env(monkeypatch)
     response = FakeHttpxResponse(200, json_data=_mailjet_success_body())
@@ -120,10 +136,13 @@ def test_send_email_logs_success_with_correlation_ids(monkeypatch, caplog):
         )
 
     assert "Mailjet send success" in caplog.text
+    assert "outcome=success" in caplog.text
     assert "host=api.mailjet.com" in caplog.text
     assert "to_email=us***@example.com" in caplog.text
     assert "message_id=123456789" in caplog.text
     assert "message_uuid=msg-uuid-1" in caplog.text
+    assert "test_api_key" not in caplog.text
+    assert "test_secret_key" not in caplog.text
 
 
 def test_send_email_omits_html_part_when_not_provided(monkeypatch):
@@ -164,7 +183,7 @@ def test_send_email_warns_on_non_default_mailjet_host(monkeypatch, caplog):
 
 
 def test_mask_email_preserves_two_char_local_part():
-    assert email_service._mask_email("ab@example.com") == "ab***@example.com"
+    assert mask_email("ab@example.com") == "ab***@example.com"
 
 
 def test_send_email_requires_mailjet_config(monkeypatch):
@@ -212,6 +231,99 @@ def test_send_email_http_error_with_decoding_error_is_handled(monkeypatch):
             subject="Test",
             text_body="Body",
         )
+
+
+def test_send_email_retries_once_on_transport_error(monkeypatch, caplog):
+    _set_mailjet_env(monkeypatch)
+    monkeypatch.setattr(email_service.time, "sleep", lambda _: None)
+    calls = _install_fake_post_sequence(
+        monkeypatch,
+        [
+            httpx.RequestError("network down"),
+            FakeHttpxResponse(200, json_data=_mailjet_success_body()),
+        ],
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.services.email_service"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Retry transport",
+            text_body="Body",
+        )
+
+    assert len(calls) == 2
+    assert "outcome=transport_error" in caplog.text
+    assert "Mailjet retry scheduled" in caplog.text
+    assert "reason=transport_error" in caplog.text
+    assert "outcome=success" in caplog.text
+
+
+def test_send_email_retries_once_on_http_500(monkeypatch, caplog):
+    _set_mailjet_env(monkeypatch)
+    monkeypatch.setattr(email_service.time, "sleep", lambda _: None)
+    calls = _install_fake_post_sequence(
+        monkeypatch,
+        [
+            FakeHttpxResponse(500, json_data={"ErrorMessage": "temporary outage"}),
+            FakeHttpxResponse(200, json_data=_mailjet_success_body()),
+        ],
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.services.email_service"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Retry 500",
+            text_body="Body",
+        )
+
+    assert len(calls) == 2
+    assert "outcome=http_error" in caplog.text
+    assert "http_status=500" in caplog.text
+    assert "reason=http_500" in caplog.text
+    assert "outcome=success" in caplog.text
+
+
+def test_send_email_does_not_retry_on_http_400(monkeypatch, caplog):
+    _set_mailjet_env(monkeypatch)
+    monkeypatch.setattr(email_service.time, "sleep", lambda _: None)
+    calls = _install_fake_post_sequence(
+        monkeypatch,
+        [
+            FakeHttpxResponse(400, json_data={"ErrorMessage": "sender is not verified"}),
+        ],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.email_service"):
+        with pytest.raises(RuntimeError, match="HTTP 400"):
+            email_service.send_email(
+                to_email="user@example.com",
+                subject="No retry 400",
+                text_body="Body",
+            )
+
+    assert len(calls) == 1
+    assert "outcome=http_error" in caplog.text
+    assert "retryable=False" in caplog.text
+
+
+def test_send_email_logs_do_not_include_mailjet_secrets_on_failure(monkeypatch, caplog):
+    _set_mailjet_env(monkeypatch)
+    response = FakeHttpxResponse(500, json_data={"ErrorMessage": "temporary outage"})
+    _install_fake_post(monkeypatch, response)
+    monkeypatch.setattr(email_service.time, "sleep", lambda _: None)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.email_service"):
+        with pytest.raises(RuntimeError):
+            email_service.send_email(
+                to_email="user@example.com",
+                subject="Failure log sanitization",
+                text_body="Body",
+            )
+
+    assert "test_api_key" not in caplog.text
+    assert "test_secret_key" not in caplog.text
+    assert "user@example.com" not in caplog.text
+    assert "us***@example.com" in caplog.text
 
 
 def test_send_email_raises_when_status_is_not_success(monkeypatch):

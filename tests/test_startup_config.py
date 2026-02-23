@@ -5,6 +5,7 @@ from app.main import (
     _validate_database_url_for_runtime,
     _validate_required_env_for_runtime,
 )
+from app.services.email_service import get_mailjet_startup_diagnostics
 
 
 def test_validate_database_url_allows_localhost_outside_railway(monkeypatch):
@@ -86,3 +87,28 @@ def test_validate_required_env_accepts_bare_domains_on_railway(monkeypatch):
     monkeypatch.setenv("CORS_ORIGINS", "web-production-f966.up.railway.app")
 
     _validate_required_env_for_runtime()
+
+
+def test_mailjet_env_diagnostics_reports_missing_required_config(monkeypatch):
+    monkeypatch.delenv("MAILJET_API_KEY", raising=False)
+    monkeypatch.delenv("MAILJET_SECRET_KEY", raising=False)
+    monkeypatch.delenv("MAILJET_FROM_EMAIL", raising=False)
+    monkeypatch.setenv("MAILJET_API_URL", "https://api.mailjet.com/v3.1/send")
+
+    diagnostics, warnings = get_mailjet_startup_diagnostics()
+
+    assert "required_config_present=False" in diagnostics
+    assert "MAILJET_API_KEY" in diagnostics
+    assert any("missing" in warning.lower() for warning in warnings)
+
+
+def test_mailjet_env_diagnostics_warns_on_non_default_host(monkeypatch):
+    monkeypatch.setenv("MAILJET_API_KEY", "x")
+    monkeypatch.setenv("MAILJET_SECRET_KEY", "y")
+    monkeypatch.setenv("MAILJET_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("MAILJET_API_URL", "https://proxy.internal.example/send")
+
+    diagnostics, warnings = get_mailjet_startup_diagnostics()
+
+    assert "host=proxy.internal.example" in diagnostics
+    assert any("host differs from default" in warning for warning in warnings)

@@ -24,6 +24,7 @@ from app.services.auth_tokens import (
     utcnow,
 )
 from app.services.email_service import send_password_reset_email, send_verify_email
+from app.utils.redaction import mask_email
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
@@ -178,6 +179,14 @@ def _get_user_agent(request: Request) -> str | None:
     return user_agent[:512]
 
 
+def _request_correlation_id(request: Request) -> str:
+    return (
+        request.headers.get("x-request-id")
+        or request.headers.get("x-correlation-id")
+        or "<missing>"
+    )
+
+
 @router.post(
     "/register",
     response_model=RegisterResponse,
@@ -189,9 +198,22 @@ def register(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Register a new user and send email verification link."""
+    request_id = _request_correlation_id(request)
+    masked_email = mask_email(body.email)
+    logger.info(
+        "register attempt request_id=%s email=%s",
+        request_id,
+        masked_email,
+    )
+
     if db.query(User).filter(User.email == body.email).first():
+        logger.info(
+            "register duplicate_email request_id=%s email=%s",
+            request_id,
+            masked_email,
+        )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
 
@@ -214,10 +236,21 @@ def register(
     )
 
     try:
+        logger.info(
+            "register verification_email_send_started request_id=%s email=%s user_id=%s",
+            request_id,
+            masked_email,
+            user.id,
+        )
         send_verify_email(user.email, user.display_name, verify_token)
     except Exception:
         db.rollback()
-        logger.exception("Failed to send verification email to user id=%s", user.id)
+        logger.exception(
+            "register verification_email_send_failed request_id=%s email=%s user_id=%s",
+            request_id,
+            masked_email,
+            user.id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to send verification email",
@@ -225,6 +258,12 @@ def register(
 
     db.commit()
     db.refresh(user)
+    logger.info(
+        "register success request_id=%s email=%s user_id=%s",
+        request_id,
+        masked_email,
+        user.id,
+    )
 
     return RegisterResponse(
         id=user.id,

@@ -10,6 +10,7 @@ from app.api import auth, lots, order
 from app.config import settings
 from app.db_init import init_db, seed_first_lot
 from app.models import get_db
+from app.services.email_service import get_mailjet_startup_diagnostics
 from app.webhooks import paykilla_callback, stripe_webhook
 
 # Configure logging
@@ -180,6 +181,10 @@ def _validate_required_env_for_runtime() -> None:
                     "CORS_ORIGINS includes localhost in Railway runtime: "
                     f"{', '.join(localhost_origins)}"
                 )
+
+    mailjet_diagnostics, mailjet_warnings = get_mailjet_startup_diagnostics()
+    logger.info("Mailjet diagnostics at startup: %s", mailjet_diagnostics)
+    warnings.extend(mailjet_warnings)
 
     if warnings:
         logger.warning("Startup environment warnings: %s", " | ".join(warnings))

@@ -1,12 +1,17 @@
 import logging
+import time
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 
 from app.config import settings
+from app.utils.redaction import mask_email
 
 logger = logging.getLogger(__name__)
 _DEFAULT_MAILJET_HOST = "api.mailjet.com"
+_MAILJET_RETRYABLE_HTTP_STATUS_CODES = {429}
+_MAILJET_MAX_RETRIES = 1
+_MAILJET_RETRY_DELAY_SECONDS = 0.25
 
 
 def _build_frontend_link(path: str, token: str) -> str:
@@ -60,21 +65,104 @@ def _mailjet_message_error_detail(message: dict) -> str:
     return _mailjet_error_detail_from_dict(message)
 
 
-def _mask_email(email: str) -> str:
-    if "@" not in email:
-        return "***"
-    local, domain = email.split("@", 1)
-    if not local:
-        return f"***@{domain}"
-    if len(local) < 2:
-        masked_local = local[0] + "***"
-    else:
-        masked_local = local[:2] + "***"
-    return f"{masked_local}@{domain}"
-
-
 def _mailjet_endpoint_host() -> str:
     return urlparse(settings.MAILJET_API_URL).hostname or "<missing>"
+
+
+def get_mailjet_startup_diagnostics() -> tuple[str, list[str]]:
+    warnings: list[str] = []
+    api_host = _mailjet_endpoint_host()
+
+    required_presence = {
+        "MAILJET_API_KEY": bool(settings.MAILJET_API_KEY.strip()),
+        "MAILJET_SECRET_KEY": bool(settings.MAILJET_SECRET_KEY.strip()),
+        "MAILJET_FROM_EMAIL": bool(settings.MAILJET_FROM_EMAIL.strip()),
+    }
+    missing = [name for name, present in required_presence.items() if not present]
+
+    from_email = settings.MAILJET_FROM_EMAIL.strip()
+    from_domain = from_email.split("@", 1)[1] if "@" in from_email else "<missing>"
+
+    if api_host != _DEFAULT_MAILJET_HOST:
+        warnings.append(
+            "MAILJET_API_URL host differs from default "
+            f"(host={api_host}, expected={_DEFAULT_MAILJET_HOST})."
+        )
+    if missing:
+        warnings.append(
+            "Mailjet required variables are missing for email delivery: " + ", ".join(missing)
+        )
+    if from_email and "@" not in from_email:
+        warnings.append("MAILJET_FROM_EMAIL does not look like a valid email address.")
+
+    diagnostics = (
+        f"host={api_host}, timeout_seconds={settings.MAILJET_TIMEOUT_SECONDS}, "
+        f"required_config_present={len(missing) == 0}, missing={','.join(missing) or '<none>'}, "
+        f"from_email_domain={from_domain}"
+    )
+    return diagnostics, warnings
+
+
+def _mailjet_http_error_detail(response: httpx.Response, response_json: object) -> str:
+    if isinstance(response_json, dict):
+        return _mailjet_error_detail_from_dict(response_json)
+    try:
+        response_text = response.text
+    except httpx.DecodingError:
+        response_text = ""
+    return (response_text or "unknown error").strip() or "unknown error"
+
+
+def _should_retry_mailjet_http_status(status_code: int) -> bool:
+    return status_code in _MAILJET_RETRYABLE_HTTP_STATUS_CODES or status_code >= 500
+
+
+def _log_mailjet_failure(
+    *,
+    outcome: str,
+    endpoint_host: str,
+    to_email: str,
+    subject: str,
+    detail: str,
+    attempt: int,
+    max_attempts: int,
+    http_status: int | None = None,
+    retryable: bool = False,
+) -> None:
+    logger.warning(
+        "Mailjet send failure outcome=%s host=%s http_status=%s to_email=%s subject=%s "
+        "attempt=%s/%s retryable=%s detail=%s",
+        outcome,
+        endpoint_host,
+        http_status if http_status is not None else "<none>",
+        mask_email(to_email),
+        subject,
+        attempt,
+        max_attempts,
+        retryable,
+        detail,
+    )
+
+
+def _log_mailjet_retry(
+    *,
+    endpoint_host: str,
+    to_email: str,
+    subject: str,
+    next_attempt: int,
+    max_attempts: int,
+    reason: str,
+) -> None:
+    logger.info(
+        "Mailjet retry scheduled host=%s to_email=%s subject=%s next_attempt=%s/%s delay_seconds=%s reason=%s",
+        endpoint_host,
+        mask_email(to_email),
+        subject,
+        next_attempt,
+        max_attempts,
+        _MAILJET_RETRY_DELAY_SECONDS,
+        reason,
+    )
 
 
 def send_email(
@@ -109,68 +197,139 @@ def send_email(
     if html_body is not None:
         message["HTMLPart"] = html_body
 
-    try:
-        response = httpx.post(
-            settings.MAILJET_API_URL,
-            auth=(api_key, secret_key),
-            json={"Messages": [message]},
-            timeout=settings.MAILJET_TIMEOUT_SECONDS,
-        )
-    except httpx.RequestError as exc:
-        raise RuntimeError("Mailjet send request failed") from exc
+    max_attempts = _MAILJET_MAX_RETRIES + 1
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = httpx.post(
+                settings.MAILJET_API_URL,
+                auth=(api_key, secret_key),
+                json={"Messages": [message]},
+                timeout=settings.MAILJET_TIMEOUT_SECONDS,
+            )
+        except httpx.RequestError as exc:
+            retryable = attempt < max_attempts
+            _log_mailjet_failure(
+                outcome="transport_error",
+                endpoint_host=endpoint_host,
+                to_email=to_email,
+                subject=subject,
+                detail=str(exc) or exc.__class__.__name__,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                retryable=retryable,
+            )
+            if retryable:
+                _log_mailjet_retry(
+                    endpoint_host=endpoint_host,
+                    to_email=to_email,
+                    subject=subject,
+                    next_attempt=attempt + 1,
+                    max_attempts=max_attempts,
+                    reason="transport_error",
+                )
+                time.sleep(_MAILJET_RETRY_DELAY_SECONDS)
+                continue
+            raise RuntimeError("Mailjet send request failed") from exc
 
-    response_json = None
-    try:
-        response_json = response.json()
-    except (ValueError, httpx.DecodingError):
         response_json = None
+        try:
+            response_json = response.json()
+        except (ValueError, httpx.DecodingError):
+            response_json = None
 
-    if response.status_code >= 400:
-        if isinstance(response_json, dict):
-            detail = _mailjet_error_detail_from_dict(response_json)
-        else:
-            try:
-                response_text = response.text
-            except httpx.DecodingError:
-                response_text = ""
-            detail = (response_text or "unknown error").strip() or "unknown error"
-        logger.warning("Mailjet HTTP error status=%s detail=%s", response.status_code, detail)
-        raise RuntimeError(f"Mailjet send failed with HTTP {response.status_code}: {detail}")
+        if response.status_code >= 400:
+            detail = _mailjet_http_error_detail(response, response_json)
+            retryable = _should_retry_mailjet_http_status(response.status_code) and attempt < max_attempts
+            _log_mailjet_failure(
+                outcome="http_error",
+                endpoint_host=endpoint_host,
+                to_email=to_email,
+                subject=subject,
+                detail=detail,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                http_status=response.status_code,
+                retryable=retryable,
+            )
+            if retryable:
+                _log_mailjet_retry(
+                    endpoint_host=endpoint_host,
+                    to_email=to_email,
+                    subject=subject,
+                    next_attempt=attempt + 1,
+                    max_attempts=max_attempts,
+                    reason=f"http_{response.status_code}",
+                )
+                time.sleep(_MAILJET_RETRY_DELAY_SECONDS)
+                continue
+            raise RuntimeError(f"Mailjet send failed with HTTP {response.status_code}: {detail}")
 
-    if not isinstance(response_json, dict):
-        raise RuntimeError(f"Mailjet send failed: invalid JSON response (HTTP {response.status_code})")
+        if not isinstance(response_json, dict):
+            _log_mailjet_failure(
+                outcome="invalid_response",
+                endpoint_host=endpoint_host,
+                to_email=to_email,
+                subject=subject,
+                detail="invalid JSON response",
+                attempt=attempt,
+                max_attempts=max_attempts,
+                http_status=response.status_code,
+            )
+            raise RuntimeError(f"Mailjet send failed: invalid JSON response (HTTP {response.status_code})")
 
-    messages = response_json.get("Messages")
-    if not isinstance(messages, list) or not messages or not isinstance(messages[0], dict):
-        raise RuntimeError("Mailjet send failed: invalid response payload (missing Messages)")
+        messages = response_json.get("Messages")
+        if not isinstance(messages, list) or not messages or not isinstance(messages[0], dict):
+            _log_mailjet_failure(
+                outcome="invalid_response",
+                endpoint_host=endpoint_host,
+                to_email=to_email,
+                subject=subject,
+                detail="missing Messages",
+                attempt=attempt,
+                max_attempts=max_attempts,
+                http_status=response.status_code,
+            )
+            raise RuntimeError("Mailjet send failed: invalid response payload (missing Messages)")
 
-    first_message = messages[0]
-    status = str(first_message.get("Status", "")).lower()
-    if status != "success":
-        detail = _mailjet_message_error_detail(first_message)
-        logger.warning("Mailjet message failure status=%s detail=%s", first_message.get("Status"), detail)
-        raise RuntimeError(f"Mailjet send failed: {detail}")
+        first_message = messages[0]
+        status = str(first_message.get("Status", "")).lower()
+        if status != "success":
+            detail = _mailjet_message_error_detail(first_message)
+            _log_mailjet_failure(
+                outcome="message_error",
+                endpoint_host=endpoint_host,
+                to_email=to_email,
+                subject=subject,
+                detail=detail,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                http_status=response.status_code,
+            )
+            raise RuntimeError(f"Mailjet send failed: {detail}")
 
-    message_id = None
-    message_uuid = None
-    response_recipients = first_message.get("To")
-    if isinstance(response_recipients, list) and response_recipients:
-        first_recipient = response_recipients[0]
-        if isinstance(first_recipient, dict):
-            message_id = first_recipient.get("MessageID")
-            message_uuid = first_recipient.get("MessageUUID")
+        message_id = None
+        message_uuid = None
+        response_recipients = first_message.get("To")
+        if isinstance(response_recipients, list) and response_recipients:
+            first_recipient = response_recipients[0]
+            if isinstance(first_recipient, dict):
+                message_id = first_recipient.get("MessageID")
+                message_uuid = first_recipient.get("MessageUUID")
 
-    logger.info(
-        "Mailjet send success host=%s http_status=%s from_email=%s to_email=%s subject=%s "
-        "message_id=%s message_uuid=%s",
-        endpoint_host,
-        response.status_code,
-        from_email,
-        _mask_email(to_email),
-        subject,
-        message_id or "<missing>",
-        message_uuid or "<missing>",
-    )
+        logger.info(
+            "Mailjet send success outcome=success host=%s http_status=%s from_email=%s to_email=%s subject=%s "
+            "attempt=%s/%s message_id=%s message_uuid=%s",
+            endpoint_host,
+            response.status_code,
+            mask_email(from_email),
+            mask_email(to_email),
+            subject,
+            attempt,
+            max_attempts,
+            message_id or "<missing>",
+            message_uuid or "<missing>",
+        )
+        return
 
 
 def send_verify_email(to_email: str, display_name: str | None, token: str) -> None:
