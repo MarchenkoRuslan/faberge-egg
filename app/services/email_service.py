@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -8,6 +9,8 @@ from app.config import settings
 from app.utils.redaction import mask_email
 
 logger = logging.getLogger(__name__)
+
+_MAILJET_SEND_API_URL = "https://api.mailjet.com/v3.1/send"
 _DEFAULT_MAILJET_HOST = "api.mailjet.com"
 _MAILJET_RETRYABLE_HTTP_STATUS_CODES = {429, 409}
 _MAILJET_MAX_RETRIES = 1
@@ -20,6 +23,32 @@ def _build_frontend_link(path: str, token: str) -> str:
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     query["token"] = token
     return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _html_escape_text(text: str) -> str:
+    """Escape text for safe use inside HTML body (e.g. display name)."""
+    return html.escape(str(text), quote=False)
+
+
+def _html_escape_attr(value: str) -> str:
+    """Escape value for safe use in an HTML attribute (e.g. href)."""
+    return html.escape(str(value), quote=True)
+
+
+def _wrap_html_body(body_fragment: str) -> str:
+    """Wrap HTML fragment in a minimal valid document for email clients."""
+    return (
+        "<!DOCTYPE html>"
+        "<html lang=\"en\">"
+        "<head>"
+        "<meta charset=\"UTF-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        "</head>"
+        "<body>"
+        f"{body_fragment}"
+        "</body>"
+        "</html>"
+    )
 
 
 def _mailjet_required_config() -> tuple[str, str, str]:
@@ -65,8 +94,14 @@ def _mailjet_message_error_detail(message: dict) -> str:
     return _mailjet_error_detail_from_dict(message)
 
 
+def _mailjet_send_url() -> str:
+    """Return Send API URL, normalized (no trailing slash) per Mailjet docs."""
+    raw = (settings.MAILJET_API_URL or _MAILJET_SEND_API_URL).strip()
+    return raw.rstrip("/") or _MAILJET_SEND_API_URL
+
+
 def _mailjet_endpoint_host() -> str:
-    return urlparse(settings.MAILJET_API_URL).hostname or "<missing>"
+    return urlparse(_mailjet_send_url()).hostname or "<missing>"
 
 
 def get_mailjet_startup_diagnostics() -> tuple[str, list[str]]:
@@ -179,21 +214,21 @@ def _build_mailjet_message(
     text_body: str,
     html_body: str | None,
 ) -> dict[str, object]:
-    recipient: dict[str, str] = {"Email": to_email}
+    """Build one message object per Send API v3.1: From, To, Subject, TextPart, HTMLPart."""
+    to_entry: dict[str, str] = {"Email": to_email}
     if to_name:
-        recipient["Name"] = to_name
-
+        to_entry["Name"] = to_name
     message: dict[str, object] = {
         "From": {
             "Email": from_email,
-            "Name": settings.MAILJET_FROM_NAME,
+            "Name": settings.MAILJET_FROM_NAME or "Mailjet",
         },
-        "To": [recipient],
+        "To": [to_entry],
         "Subject": subject,
         "TextPart": text_body,
     }
-    if html_body is not None:
-        message["HTMLPart"] = html_body
+    if html_body is not None and html_body.strip():
+        message["HTMLPart"] = html_body.strip()
     return message
 
 
@@ -202,10 +237,14 @@ def _send_mailjet_request(
     secret_key: str,
     message: dict[str, object],
 ) -> httpx.Response:
+    """POST to Mailjet Send API v3.1 with Basic Auth and JSON body per official docs."""
+    url = _mailjet_send_url()
+    body = {"Messages": [message]}
     return httpx.post(
-        settings.MAILJET_API_URL,
+        url,
         auth=(api_key, secret_key),
-        json={"Messages": [message]},
+        json=body,
+        headers={"Content-Type": "application/json"},
         timeout=settings.MAILJET_TIMEOUT_SECONDS,
     )
 
@@ -397,16 +436,18 @@ def send_email(
 def send_verify_email(to_email: str, display_name: str | None, token: str) -> None:
     link = _build_frontend_link(settings.EMAIL_VERIFY_PATH, token)
     name = display_name or "there"
+    name_safe = _html_escape_text(name)
+    link_safe = _html_escape_attr(link)
     text = (
         f"Hi {name},\n\n"
         "Please confirm your email address by opening this link:\n"
         f"{link}\n\n"
         "If you did not create this account, ignore this message."
     )
-    html = (
-        f"<p>Hi {name},</p>"
+    html_fragment = (
+        f"<p>Hi {name_safe},</p>"
         "<p>Please confirm your email address by clicking the link below:</p>"
-        f"<p><a href=\"{link}\">Confirm email</a></p>"
+        f"<p><a href=\"{link_safe}\">Confirm email</a></p>"
         "<p>If you did not create this account, ignore this message.</p>"
     )
     send_email(
@@ -414,23 +455,25 @@ def send_verify_email(to_email: str, display_name: str | None, token: str) -> No
         to_name=display_name,
         subject="Confirm your email",
         text_body=text,
-        html_body=html,
+        html_body=_wrap_html_body(html_fragment),
     )
 
 
 def send_password_reset_email(to_email: str, display_name: str | None, token: str) -> None:
     link = _build_frontend_link(settings.PASSWORD_RESET_PATH, token)
     name = display_name or "there"
+    name_safe = _html_escape_text(name)
+    link_safe = _html_escape_attr(link)
     text = (
         f"Hi {name},\n\n"
         "You requested a password reset. Open this link to set a new password:\n"
         f"{link}\n\n"
         "If you did not request this, ignore this message."
     )
-    html = (
-        f"<p>Hi {name},</p>"
+    html_fragment = (
+        f"<p>Hi {name_safe},</p>"
         "<p>You requested a password reset. Click the link below to set a new password:</p>"
-        f"<p><a href=\"{link}\">Reset password</a></p>"
+        f"<p><a href=\"{link_safe}\">Reset password</a></p>"
         "<p>If you did not request this, ignore this message.</p>"
     )
     send_email(
@@ -438,5 +481,5 @@ def send_password_reset_email(to_email: str, display_name: str | None, token: st
         to_name=display_name,
         subject="Reset your password",
         text_body=text,
-        html_body=html,
+        html_body=_wrap_html_body(html_fragment),
     )
