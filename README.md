@@ -45,8 +45,9 @@ DATABASE_URL=postgresql://user:password@localhost:5432/marketplace
 JWT_SECRET=change-me-in-production
 
 # REQUIRED FOR EMAIL FLOWS (register verification + password reset)
-SMTP_HOST=
-SMTP_FROM_EMAIL=
+MAILJET_API_KEY=
+MAILJET_SECRET_KEY=
+MAILJET_FROM_EMAIL=
 
 # OPTIONAL: auth token settings
 JWT_ALGORITHM=HS256
@@ -61,12 +62,11 @@ FRONTEND_URL=http://localhost:3000
 EMAIL_VERIFY_PATH=/verify-email
 PASSWORD_RESET_PATH=/restore-password
 
-# OPTIONAL: SMTP details
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM_NAME=Marketplace API
-SMTP_USE_TLS=true
+# OPTIONAL: Mailjet details
+# Sender email/domain must be verified in Mailjet.
+MAILJET_FROM_NAME=Marketplace API
+MAILJET_API_URL=https://api.mailjet.com/v3.1/send
+MAILJET_TIMEOUT_SECONDS=10
 
 # OPTIONAL: Stripe (required only if Stripe payments are enabled)
 STRIPE_SECRET_KEY=
@@ -106,7 +106,8 @@ alembic revision -m "describe change"
 3. Configure app variables:
    - Required: `DATABASE_URL` (use Railway Postgres reference), `JWT_SECRET`
    - Recommended for deployment: `BASE_URL`, `CORS_ORIGINS`
-   - Required for email auth flows: `SMTP_HOST`, `SMTP_FROM_EMAIL`
+   - Required for email auth flows: `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_FROM_EMAIL`
+   - Mailjet sender email/domain must be verified before sending.
    - Optional: payment provider vars (Stripe/PayKilla) only when those methods are enabled.
 4. Configure provider webhooks:
    - Stripe: `https://<railway-domain>/webhooks/stripe`

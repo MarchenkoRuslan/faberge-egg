@@ -65,32 +65,28 @@ class Settings:
         return self._get_int("EMAIL_RESEND_COOLDOWN_SECONDS", 60)
 
     @property
-    def SMTP_HOST(self) -> str:
-        return os.getenv("SMTP_HOST", "").strip()
+    def MAILJET_API_KEY(self) -> str:
+        return os.getenv("MAILJET_API_KEY", "").strip()
 
     @property
-    def SMTP_PORT(self) -> int:
-        return self._get_int("SMTP_PORT", 587)
+    def MAILJET_SECRET_KEY(self) -> str:
+        return os.getenv("MAILJET_SECRET_KEY", "").strip()
 
     @property
-    def SMTP_USER(self) -> str:
-        return os.getenv("SMTP_USER", "").strip()
+    def MAILJET_FROM_EMAIL(self) -> str:
+        return os.getenv("MAILJET_FROM_EMAIL", "").strip()
 
     @property
-    def SMTP_PASSWORD(self) -> str:
-        return os.getenv("SMTP_PASSWORD", "").strip()
+    def MAILJET_FROM_NAME(self) -> str:
+        return os.getenv("MAILJET_FROM_NAME", "Marketplace API").strip()
 
     @property
-    def SMTP_FROM_EMAIL(self) -> str:
-        return os.getenv("SMTP_FROM_EMAIL", "").strip()
+    def MAILJET_API_URL(self) -> str:
+        return os.getenv("MAILJET_API_URL", "https://api.mailjet.com/v3.1/send").strip()
 
     @property
-    def SMTP_FROM_NAME(self) -> str:
-        return os.getenv("SMTP_FROM_NAME", "Marketplace API").strip()
-
-    @property
-    def SMTP_USE_TLS(self) -> bool:
-        return self._get_bool("SMTP_USE_TLS", True)
+    def MAILJET_TIMEOUT_SECONDS(self) -> int:
+        return self._get_int("MAILJET_TIMEOUT_SECONDS", 10)
 
     @property
     def STRIPE_SECRET_KEY(self) -> str:
