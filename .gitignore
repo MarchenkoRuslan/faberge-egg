@@ -14,6 +14,8 @@ ENV/
 .coverage
 .coverage.*
 htmlcov/
+test_app.db
+*.sqlite3
 
 # Tooling caches
 .mypy_cache/
