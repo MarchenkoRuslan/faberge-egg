@@ -91,6 +91,7 @@ Expected:
 
 ## Common interpretations
 
-- `409` + no Mailjet event: normal duplicate-email branch.
+- `409` on register response: email already registered (duplicate-email branch); Mailjet is not called.
 - `503` + `Mailjet send failure`: Mailjet transport/HTTP/message error; check sender verification and API keys.
+- Mailjet HTTP **409** in logs: Mailjet returned Conflict. The app retries once; if it keeps failing, check Mailjet dashboard (sender/domain verification, account limits) and the logged `detail=` (ErrorCode/ErrorMessage). Sender and domain must be verified in [Sender domains & addresses](https://app.mailjet.com/account/sender).
 - `422`: frontend payload bug or validation mismatch.

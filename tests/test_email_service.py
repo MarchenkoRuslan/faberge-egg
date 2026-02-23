@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 
 import httpx
 import pytest
@@ -305,6 +305,31 @@ def test_send_email_retries_once_on_http_429(monkeypatch, caplog):
     assert "outcome=http_error" in caplog.text
     assert "http_status=429" in caplog.text
     assert "reason=http_429" in caplog.text
+    assert "outcome=success" in caplog.text
+
+
+def test_send_email_retries_once_on_http_409(monkeypatch, caplog):
+    _set_mailjet_env(monkeypatch)
+    monkeypatch.setattr(email_service.time, "sleep", lambda _: None)
+    calls = _install_fake_post_sequence(
+        monkeypatch,
+        [
+            FakeHttpxResponse(409, json_data={"ErrorMessage": "Conflict", "ErrorCode": "mj-conflict"}),
+            FakeHttpxResponse(200, json_data=_mailjet_success_body()),
+        ],
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.services.email_service"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Retry 409",
+            text_body="Body",
+        )
+
+    assert len(calls) == 2
+    assert "outcome=http_error" in caplog.text
+    assert "http_status=409" in caplog.text
+    assert "reason=http_409" in caplog.text
     assert "outcome=success" in caplog.text
 
 

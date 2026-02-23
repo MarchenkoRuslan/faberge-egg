@@ -9,7 +9,7 @@ from app.utils.redaction import mask_email
 
 logger = logging.getLogger(__name__)
 _DEFAULT_MAILJET_HOST = "api.mailjet.com"
-_MAILJET_RETRYABLE_HTTP_STATUS_CODES = {429}
+_MAILJET_RETRYABLE_HTTP_STATUS_CODES = {429, 409}
 _MAILJET_MAX_RETRIES = 1
 _MAILJET_RETRY_DELAY_SECONDS = 0.25
 
@@ -105,6 +105,11 @@ def get_mailjet_startup_diagnostics() -> tuple[str, list[str]]:
 
 def _mailjet_http_error_detail(response: httpx.Response, response_json: object) -> str:
     if isinstance(response_json, dict):
+        messages = response_json.get("Messages")
+        if isinstance(messages, list) and messages and isinstance(messages[0], dict):
+            msg_detail = _mailjet_message_error_detail(messages[0])
+            if msg_detail and msg_detail != "unknown error":
+                return msg_detail
         return _mailjet_error_detail_from_dict(response_json)
     try:
         response_text = response.text
