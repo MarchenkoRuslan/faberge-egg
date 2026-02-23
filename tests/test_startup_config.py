@@ -2,6 +2,7 @@
 
 from app.main import (
     _db_url_diagnostics,
+    _run_startup_database_tasks,
     _validate_database_url_for_runtime,
     _validate_required_env_for_runtime,
 )
@@ -112,3 +113,68 @@ def test_mailjet_env_diagnostics_warns_on_non_default_host(monkeypatch):
 
     assert "host=proxy.internal.example" in diagnostics
     assert any("host differs from default" in warning for warning in warnings)
+
+
+def test_startup_db_tasks_skip_migrations_when_disabled(monkeypatch):
+    calls = []
+
+    def fake_wait(*, retries, retry_delay_seconds):
+        calls.append("wait")
+
+    def fake_migrate():
+        calls.append("migrate")
+
+    def fake_seed(*, require_schema):
+        calls.append(("seed", require_schema))
+        return False
+
+    monkeypatch.setenv("RUN_MIGRATIONS_ON_STARTUP", "false")
+    monkeypatch.setenv("RUN_SEED_ON_STARTUP", "true")
+    monkeypatch.setattr("app.main.wait_for_db", fake_wait)
+    monkeypatch.setattr("app.main.run_migrations", fake_migrate)
+    monkeypatch.setattr("app.main.run_seed", fake_seed)
+
+    _run_startup_database_tasks()
+
+    assert calls == ["wait", ("seed", False)]
+
+
+def test_startup_db_tasks_skip_seed_when_disabled(monkeypatch):
+    calls = []
+
+    def fake_wait(*, retries, retry_delay_seconds):
+        calls.append("wait")
+
+    def fake_migrate():
+        calls.append("migrate")
+
+    def fake_seed(*, require_schema):
+        calls.append(("seed", require_schema))
+        return True
+
+    monkeypatch.setenv("RUN_MIGRATIONS_ON_STARTUP", "true")
+    monkeypatch.setenv("RUN_SEED_ON_STARTUP", "false")
+    monkeypatch.setattr("app.main.wait_for_db", fake_wait)
+    monkeypatch.setattr("app.main.run_migrations", fake_migrate)
+    monkeypatch.setattr("app.main.run_seed", fake_seed)
+
+    _run_startup_database_tasks()
+
+    assert calls == ["wait", "migrate"]
+
+
+def test_startup_db_tasks_seed_missing_schema_does_not_fail_when_migrations_disabled(monkeypatch):
+    def fake_wait(*, retries, retry_delay_seconds):
+        return None
+
+    def fake_seed(*, require_schema):
+        assert require_schema is False
+        return False
+
+    monkeypatch.setenv("RUN_MIGRATIONS_ON_STARTUP", "false")
+    monkeypatch.setenv("RUN_SEED_ON_STARTUP", "true")
+    monkeypatch.setattr("app.main.wait_for_db", fake_wait)
+    monkeypatch.setattr("app.main.run_migrations", lambda: pytest.fail("run_migrations should be skipped"))
+    monkeypatch.setattr("app.main.run_seed", fake_seed)
+
+    _run_startup_database_tasks()

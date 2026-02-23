@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
@@ -8,8 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, lots, order
 from app.config import settings
-from app.db_init import init_db, seed_first_lot
-from app.models import get_db
+from app.db_init import run_migrations, run_seed, wait_for_db
 from app.services.email_service import get_mailjet_startup_diagnostics
 from app.webhooks import paykilla_callback, stripe_webhook
 
@@ -27,7 +27,7 @@ def _configure_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     if not root.handlers:
-        handler = _FlushingStreamHandler()
+        handler = _FlushingStreamHandler(stream=sys.stdout)
         handler.setFormatter(logging.Formatter(_log_format))
         root.addHandler(handler)
 
@@ -224,6 +224,26 @@ def _validate_required_env_for_runtime() -> None:
         raise RuntimeError("Startup environment validation failed: " + " | ".join(errors))
 
 
+def _run_startup_database_tasks() -> None:
+    wait_for_db(
+        retries=settings.DB_CONNECT_RETRIES,
+        retry_delay_seconds=settings.DB_CONNECT_RETRY_DELAY_SECONDS,
+    )
+
+    if settings.RUN_MIGRATIONS_ON_STARTUP:
+        run_migrations()
+    else:
+        logger.info("Skipping DB migrations on startup (RUN_MIGRATIONS_ON_STARTUP=false)")
+
+    if not settings.RUN_SEED_ON_STARTUP:
+        logger.info("Skipping DB seed on startup (RUN_SEED_ON_STARTUP=false)")
+        return
+
+    # If migrations are disabled for this process, allow startup to proceed when the
+    # schema is not prepared yet (e.g. predeploy migration step has not run on a dev env).
+    run_seed(require_schema=settings.RUN_MIGRATIONS_ON_STARTUP)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database_url = "<unavailable>"
@@ -233,7 +253,7 @@ async def lifespan(app: FastAPI):
         logger.info("DATABASE_URL diagnostics at startup: %s", _db_url_diagnostics(database_url))
         _validate_database_url_for_runtime(database_url)
         _validate_required_env_for_runtime()
-        init_db()
+        _run_startup_database_tasks()
     except Exception as exc:
         diagnostics = (
             _db_url_diagnostics(database_url)
@@ -246,11 +266,6 @@ async def lifespan(app: FastAPI):
             diagnostics,
         )
         raise
-    db = next(get_db())
-    try:
-        seed_first_lot(db)
-    finally:
-        db.close()
     logger.info("Application startup completed successfully.")
     yield
 

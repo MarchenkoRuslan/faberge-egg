@@ -86,17 +86,27 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 BASE_URL=http://localhost:8000
 DB_CONNECT_RETRIES=10
 DB_CONNECT_RETRY_DELAY_SECONDS=1
+RUN_MIGRATIONS_ON_STARTUP=true
+RUN_SEED_ON_STARTUP=true
 ```
 
 ## Migrations
 
-Alembic migrations are applied automatically on app startup for all runtimes.
+By default, the app can run migrations/seed on startup (`RUN_MIGRATIONS_ON_STARTUP=true`,
+`RUN_SEED_ON_STARTUP=true`) for local development.
+
+For production (especially Railway), prefer a separate DB prepare step and disable
+migrations/seed in the web service startup to avoid readiness timeouts and migration lock contention.
 
 Manual commands:
 
 ```bash
 alembic upgrade head
 alembic revision -m "describe change"
+python -m app.db_tasks wait
+python -m app.db_tasks migrate
+python -m app.db_tasks seed
+python -m app.db_tasks prepare
 ```
 
 ## Deploy to Railway
@@ -106,10 +116,19 @@ alembic revision -m "describe change"
 3. Configure app variables:
    - Required: `DATABASE_URL` (use Railway Postgres reference), `JWT_SECRET`
    - Recommended for deployment: `BASE_URL`, `CORS_ORIGINS`
+   - Recommended for web service startup: `RUN_MIGRATIONS_ON_STARTUP=false`, `RUN_SEED_ON_STARTUP=false`
    - Required for email auth flows: `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_FROM_EMAIL`
    - Mailjet sender email/domain must be verified before sending.
    - Optional: payment provider vars (Stripe/PayKilla) only when those methods are enabled.
-4. Configure provider webhooks:
+4. Run DB prepare as a one-off/predeploy step (same `DATABASE_URL` and env vars):
+   - `python -m app.db_tasks prepare`
+5. Deploy the web service using the normal start command (from `railway.json`).
+6. Verify startup:
+   - `GET /health` returns `200`
+   - logs contain `Application startup completed successfully.`
+   - Railway Postgres service logs such as `connection reset by peer`, `invalid length of startup packet`,
+     or `pg_stat_statements does not exist` can appear independently of app startup success.
+7. Configure provider webhooks:
    - Stripe: `https://<railway-domain>/webhooks/stripe`
    - PayKilla: `https://<railway-domain>/webhooks/paykilla`
 
