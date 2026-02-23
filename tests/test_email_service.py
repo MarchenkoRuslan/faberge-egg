@@ -1,9 +1,36 @@
-from unittest.mock import patch
+import logging
 
 import httpx
 import pytest
 
 from app.services import email_service
+
+
+class FakeHttpxResponse:
+    def __init__(
+        self,
+        status_code: int,
+        json_data: dict | None = None,
+        text_data: str = "",
+        json_error: Exception | None = None,
+        text_error: Exception | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self._json_data = json_data
+        self._text_data = text_data
+        self._json_error = json_error
+        self._text_error = text_error
+
+    def json(self):
+        if self._json_error is not None:
+            raise self._json_error
+        return self._json_data
+
+    @property
+    def text(self) -> str:
+        if self._text_error is not None:
+            raise self._text_error
+        return self._text_data
 
 
 def _set_mailjet_env(monkeypatch):
@@ -15,59 +42,129 @@ def _set_mailjet_env(monkeypatch):
     monkeypatch.setenv("MAILJET_TIMEOUT_SECONDS", "10")
 
 
-def test_send_email_success_posts_mailjet_payload(monkeypatch):
+def _mailjet_success_body(
+    *,
+    message_id: int | None = None,
+    message_uuid: str | None = None,
+) -> dict:
+    message: dict[str, object] = {"Status": "success"}
+    if message_id is not None or message_uuid is not None:
+        recipient: dict[str, object] = {}
+        if message_id is not None:
+            recipient["MessageID"] = message_id
+        if message_uuid is not None:
+            recipient["MessageUUID"] = message_uuid
+        message["To"] = [recipient]
+    return {"Messages": [message]}
+
+
+def _install_fake_post(monkeypatch, response: FakeHttpxResponse):
+    calls: list[dict] = []
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return response
+
+    monkeypatch.setattr(email_service.httpx, "post", fake_post)
+    return calls
+
+
+def test_send_email_posts_expected_mailjet_payload(monkeypatch):
     _set_mailjet_env(monkeypatch)
+    response = FakeHttpxResponse(200, json_data=_mailjet_success_body())
+    calls = _install_fake_post(monkeypatch, response)
 
-    with patch("app.services.email_service.httpx.post") as mock_post:
-        mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "Messages": [{"Status": "success"}]
-        }
+    email_service.send_email(
+        to_email="user@example.com",
+        to_name="User Name",
+        subject="Test subject",
+        text_body="Plain text",
+        html_body="<p>HTML</p>",
+    )
 
-        email_service.send_email(
-            to_email="user@example.com",
-            to_name="User Name",
-            subject="Test subject",
-            text_body="Plain text",
-            html_body="<p>HTML</p>",
-        )
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["url"] == "https://api.mailjet.com/v3.1/send"
+    assert call["auth"] == ("test_api_key", "test_secret_key")
+    assert call["timeout"] == 10
 
-    mock_post.assert_called_once()
-    call_args = mock_post.call_args
-    assert call_args.args[0] == "https://api.mailjet.com/v3.1/send"
-    assert call_args.kwargs["auth"] == ("test_api_key", "test_secret_key")
-    assert call_args.kwargs["timeout"] == 10
-
-    payload = call_args.kwargs["json"]
+    payload = call["json"]
     assert "Messages" in payload
     message = payload["Messages"][0]
     assert message["From"]["Email"] == "noreply@example.com"
     assert message["From"]["Name"] == "Marketplace API"
-    assert message["To"] == [{"Email": "user@example.com", "Name": "User Name"}]
+    assert message["To"] == [
+        {"Email": "user@example.com", "Name": "User Name"}
+    ]
     assert message["Subject"] == "Test subject"
     assert message["TextPart"] == "Plain text"
     assert message["HTMLPart"] == "<p>HTML</p>"
 
 
-def test_send_email_omits_html_part_when_not_provided(monkeypatch):
+def test_send_email_logs_success_with_correlation_ids(monkeypatch, caplog):
     _set_mailjet_env(monkeypatch)
+    response = FakeHttpxResponse(
+        200,
+        json_data=_mailjet_success_body(
+            message_id=123456789,
+            message_uuid="msg-uuid-1",
+        ),
+    )
+    _install_fake_post(monkeypatch, response)
 
-    with patch("app.services.email_service.httpx.post") as mock_post:
-        mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
-            "Messages": [{"Status": "success"}]
-        }
-
+    with caplog.at_level(logging.INFO, logger="app.services.email_service"):
         email_service.send_email(
             to_email="user@example.com",
             subject="Test subject",
             text_body="Plain text",
         )
 
-    payload = mock_post.call_args.kwargs["json"]
+    assert "Mailjet send success" in caplog.text
+    assert "host=api.mailjet.com" in caplog.text
+    assert "to_email=us***@example.com" in caplog.text
+    assert "message_id=123456789" in caplog.text
+    assert "message_uuid=msg-uuid-1" in caplog.text
+
+
+def test_send_email_omits_html_part_when_not_provided(monkeypatch):
+    _set_mailjet_env(monkeypatch)
+    response = FakeHttpxResponse(200, json_data=_mailjet_success_body())
+    calls = _install_fake_post(monkeypatch, response)
+
+    email_service.send_email(
+        to_email="user@example.com",
+        subject="Test subject",
+        text_body="Plain text",
+    )
+
+    payload = calls[0]["json"]
     message = payload["Messages"][0]
     assert "HTMLPart" not in message
     assert message["To"] == [{"Email": "user@example.com"}]
+
+
+def test_send_email_warns_on_non_default_mailjet_host(monkeypatch, caplog):
+    _set_mailjet_env(monkeypatch)
+    monkeypatch.setenv(
+        "MAILJET_API_URL",
+        "https://proxy.internal.example/send",
+    )
+    response = FakeHttpxResponse(200, json_data=_mailjet_success_body())
+    _install_fake_post(monkeypatch, response)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.email_service"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Test subject",
+            text_body="Plain text",
+        )
+
+    assert "Mailjet API URL host differs from default" in caplog.text
+    assert "host=proxy.internal.example" in caplog.text
+
+
+def test_mask_email_preserves_two_char_local_part():
+    assert email_service._mask_email("ab@example.com") == "ab***@example.com"
 
 
 def test_send_email_requires_mailjet_config(monkeypatch):
@@ -85,53 +182,43 @@ def test_send_email_requires_mailjet_config(monkeypatch):
 
 def test_send_email_raises_on_http_error(monkeypatch):
     _set_mailjet_env(monkeypatch)
+    response = FakeHttpxResponse(
+        400,
+        json_data={"ErrorMessage": "sender is not verified"},
+        text_data="Bad Request",
+    )
+    _install_fake_post(monkeypatch, response)
 
-    with patch("app.services.email_service.httpx.post") as mock_post:
-        mock_post.return_value.status_code = 400
-        mock_post.return_value.text = "Bad Request"
-        mock_post.return_value.json.return_value = {
-            "ErrorMessage": "sender is not verified"
-        }
-
-        with pytest.raises(RuntimeError, match="HTTP 400"):
-            email_service.send_email(
-                to_email="user@example.com",
-                subject="Test",
-                text_body="Body",
-            )
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Test",
+            text_body="Body",
+        )
 
 
 def test_send_email_http_error_with_decoding_error_is_handled(monkeypatch):
     _set_mailjet_env(monkeypatch)
+    response = FakeHttpxResponse(
+        400,
+        json_error=httpx.DecodingError("invalid encoding"),
+        text_error=httpx.DecodingError("invalid encoding"),
+    )
+    _install_fake_post(monkeypatch, response)
 
-    class FakeResponse:
-        status_code = 400
-
-        @property
-        def text(self):
-            raise httpx.DecodingError("invalid encoding")
-
-        def json(self):
-            raise httpx.DecodingError("invalid encoding")
-
-    with patch(
-        "app.services.email_service.httpx.post",
-        return_value=FakeResponse(),
-    ):
-        with pytest.raises(RuntimeError, match="HTTP 400"):
-            email_service.send_email(
-                to_email="user@example.com",
-                subject="Test",
-                text_body="Body",
-            )
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Test",
+            text_body="Body",
+        )
 
 
-def test_send_email_raises_when_mailjet_message_status_is_not_success(monkeypatch):
+def test_send_email_raises_when_status_is_not_success(monkeypatch):
     _set_mailjet_env(monkeypatch)
-
-    with patch("app.services.email_service.httpx.post") as mock_post:
-        mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {
+    response = FakeHttpxResponse(
+        200,
+        json_data={
             "Messages": [
                 {
                     "Status": "error",
@@ -144,53 +231,66 @@ def test_send_email_raises_when_mailjet_message_status_is_not_success(monkeypatc
                     ],
                 }
             ]
-        }
+        },
+    )
+    _install_fake_post(monkeypatch, response)
 
-        with pytest.raises(RuntimeError, match="rejected"):
-            email_service.send_email(
-                to_email="user@example.com",
-                subject="Test",
-                text_body="Body",
-            )
+    with pytest.raises(RuntimeError, match="rejected"):
+        email_service.send_email(
+            to_email="user@example.com",
+            subject="Test",
+            text_body="Body",
+        )
 
 
 def test_send_verify_email_builds_link_and_subject(monkeypatch):
     monkeypatch.setenv("FRONTEND_URL", "https://frontend.example.com")
     monkeypatch.setenv("EMAIL_VERIFY_PATH", "/verify-email")
 
-    with patch("app.services.email_service.send_email") as mock_send:
-        email_service.send_verify_email(
-            to_email="user@example.com",
-            display_name="Alice",
-            token="verify_token",
-        )
+    captured: dict = {}
 
-    mock_send.assert_called_once()
-    kwargs = mock_send.call_args.kwargs
-    assert kwargs["to_email"] == "user@example.com"
-    assert kwargs["to_name"] == "Alice"
-    assert kwargs["subject"] == "Confirm your email"
-    assert "token=verify_token" in kwargs["text_body"]
-    assert "token=verify_token" in kwargs["html_body"]
-    assert "https://frontend.example.com/verify-email" in kwargs["text_body"]
+    def fake_send_email(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(email_service, "send_email", fake_send_email)
+
+    email_service.send_verify_email(
+        to_email="user@example.com",
+        display_name="Alice",
+        token="verify_token",
+    )
+
+    assert captured["to_email"] == "user@example.com"
+    assert captured["to_name"] == "Alice"
+    assert captured["subject"] == "Confirm your email"
+    assert "token=verify_token" in captured["text_body"]
+    assert "token=verify_token" in captured["html_body"]
+    assert "https://frontend.example.com/verify-email" in captured["text_body"]
 
 
 def test_send_password_reset_email_builds_link_and_subject(monkeypatch):
     monkeypatch.setenv("FRONTEND_URL", "https://frontend.example.com")
     monkeypatch.setenv("PASSWORD_RESET_PATH", "/restore-password")
 
-    with patch("app.services.email_service.send_email") as mock_send:
-        email_service.send_password_reset_email(
-            to_email="user@example.com",
-            display_name="Alice",
-            token="reset_token",
-        )
+    captured: dict = {}
 
-    mock_send.assert_called_once()
-    kwargs = mock_send.call_args.kwargs
-    assert kwargs["to_email"] == "user@example.com"
-    assert kwargs["to_name"] == "Alice"
-    assert kwargs["subject"] == "Reset your password"
-    assert "token=reset_token" in kwargs["text_body"]
-    assert "token=reset_token" in kwargs["html_body"]
-    assert "https://frontend.example.com/restore-password" in kwargs["text_body"]
+    def fake_send_email(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(email_service, "send_email", fake_send_email)
+
+    email_service.send_password_reset_email(
+        to_email="user@example.com",
+        display_name="Alice",
+        token="reset_token",
+    )
+
+    assert captured["to_email"] == "user@example.com"
+    assert captured["to_name"] == "Alice"
+    assert captured["subject"] == "Reset your password"
+    assert "token=reset_token" in captured["text_body"]
+    assert "token=reset_token" in captured["html_body"]
+    assert (
+        "https://frontend.example.com/restore-password"
+        in captured["text_body"]
+    )

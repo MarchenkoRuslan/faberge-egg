@@ -6,6 +6,7 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+_DEFAULT_MAILJET_HOST = "api.mailjet.com"
 
 
 def _build_frontend_link(path: str, token: str) -> str:
@@ -59,6 +60,23 @@ def _mailjet_message_error_detail(message: dict) -> str:
     return _mailjet_error_detail_from_dict(message)
 
 
+def _mask_email(email: str) -> str:
+    if "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    if not local:
+        return f"***@{domain}"
+    if len(local) < 2:
+        masked_local = local[0] + "***"
+    else:
+        masked_local = local[:2] + "***"
+    return f"{masked_local}@{domain}"
+
+
+def _mailjet_endpoint_host() -> str:
+    return urlparse(settings.MAILJET_API_URL).hostname or "<missing>"
+
+
 def send_email(
     to_email: str,
     subject: str,
@@ -67,6 +85,13 @@ def send_email(
     to_name: str | None = None,
 ) -> None:
     api_key, secret_key, from_email = _mailjet_required_config()
+    endpoint_host = _mailjet_endpoint_host()
+    if endpoint_host != _DEFAULT_MAILJET_HOST:
+        logger.warning(
+            "Mailjet API URL host differs from default host=%s expected=%s",
+            endpoint_host,
+            _DEFAULT_MAILJET_HOST,
+        )
 
     recipient: dict[str, str] = {"Email": to_email}
     if to_name:
@@ -125,6 +150,27 @@ def send_email(
         detail = _mailjet_message_error_detail(first_message)
         logger.warning("Mailjet message failure status=%s detail=%s", first_message.get("Status"), detail)
         raise RuntimeError(f"Mailjet send failed: {detail}")
+
+    message_id = None
+    message_uuid = None
+    response_recipients = first_message.get("To")
+    if isinstance(response_recipients, list) and response_recipients:
+        first_recipient = response_recipients[0]
+        if isinstance(first_recipient, dict):
+            message_id = first_recipient.get("MessageID")
+            message_uuid = first_recipient.get("MessageUUID")
+
+    logger.info(
+        "Mailjet send success host=%s http_status=%s from_email=%s to_email=%s subject=%s "
+        "message_id=%s message_uuid=%s",
+        endpoint_host,
+        response.status_code,
+        from_email,
+        _mask_email(to_email),
+        subject,
+        message_id or "<missing>",
+        message_uuid or "<missing>",
+    )
 
 
 def send_verify_email(to_email: str, display_name: str | None, token: str) -> None:
