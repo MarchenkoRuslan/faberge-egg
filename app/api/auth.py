@@ -24,6 +24,7 @@ from app.services.auth_tokens import (
     utcnow,
     validate_one_time_token,
 )
+from app.rate_limit import require_email_rate_limit
 from app.services.email_service import send_password_reset_email, send_verify_email
 from app.utils.redaction import mask_email
 
@@ -205,6 +206,7 @@ def register(
     body: RegisterRequest,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    _rate_limit: Annotated[None, Depends(require_email_rate_limit)],
 ):
     """Register a new user and send email verification link."""
     request_id = _request_correlation_id(request)
@@ -332,7 +334,9 @@ def login(
 )
 def request_email_verification(
     body: EmailVerifyRequest,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
+    _rate_limit: Annotated[None, Depends(require_email_rate_limit)],
 ):
     """Resend verification email (generic success response for privacy)."""
     user = db.query(User).filter(User.email == body.email).first()
@@ -470,7 +474,9 @@ def logout(
 )
 def request_password_reset(
     body: PasswordForgotRequest,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
+    _rate_limit: Annotated[None, Depends(require_email_rate_limit)],
 ):
     """Issue password reset token and send email (privacy-safe response)."""
     user = db.query(User).filter(User.email == body.email).first()

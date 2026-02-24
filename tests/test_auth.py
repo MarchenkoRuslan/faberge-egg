@@ -381,3 +381,29 @@ def test_password_reset_validate_invalid_token_returns_400(client):
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "link is no longer active" in response.json()["detail"].lower()
+
+
+def test_email_rate_limit_returns_429(client, test_user, monkeypatch):
+    """When rate limit is exceeded, email-sending endpoint returns 429."""
+    monkeypatch.setattr(
+        type(settings), "RATE_LIMIT_EMAIL_REQUESTS", property(lambda self: 1)
+    )
+    monkeypatch.setattr(
+        type(settings), "RATE_LIMIT_EMAIL_WINDOW_SECONDS", property(lambda self: 900)
+    )
+    headers = {"X-Forwarded-For": "192.0.2.99"}
+    with patch("app.api.auth.send_password_reset_email"):
+        first = client.post(
+            "/api/auth/password/forgot",
+            json={"email": "test@example.com"},
+            headers=headers,
+        )
+    assert first.status_code == status.HTTP_200_OK
+    with patch("app.api.auth.send_password_reset_email"):
+        second = client.post(
+            "/api/auth/password/forgot",
+            json={"email": "test@example.com"},
+            headers=headers,
+        )
+    assert second.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+    assert "Retry-After" in second.headers or "retry" in second.json().get("detail", "").lower()

@@ -67,6 +67,17 @@ class Settings:
     def EMAIL_RESEND_COOLDOWN_SECONDS(self) -> int:
         return self._get_int("EMAIL_RESEND_COOLDOWN_SECONDS", 60)
 
+    # Rate limit for endpoints that send email (register, verify-email/request, password/forgot)
+    @property
+    def RATE_LIMIT_EMAIL_REQUESTS(self) -> int:
+        """Max requests per RATE_LIMIT_EMAIL_WINDOW_SECONDS per IP for email-sending endpoints."""
+        return self._get_int("RATE_LIMIT_EMAIL_REQUESTS", 5)
+
+    @property
+    def RATE_LIMIT_EMAIL_WINDOW_SECONDS(self) -> int:
+        """Time window in seconds for email rate limit (default 15 min)."""
+        return self._get_int("RATE_LIMIT_EMAIL_WINDOW_SECONDS", 900)
+
     @property
     def RESEND_API_KEY(self) -> str:
         return os.getenv("RESEND_API_KEY", "").strip()

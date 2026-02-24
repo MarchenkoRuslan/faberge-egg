@@ -113,6 +113,7 @@ python -m app.db_tasks prepare
    - Recommended for deployment: `BASE_URL`, `CORS_ORIGINS`
    - Required for email auth flows: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_TEMPLATE_VERIFY_EMAIL`, `RESEND_TEMPLATE_PASSWORD_RESET`
    - Resend sender domain must be verified; template variables: verify `CONFIRM_LINK`, `USER_NAME`; reset `RESET_LINK`, `USER_NAME`.
+   - Rate limit for email endpoints: `RATE_LIMIT_EMAIL_REQUESTS` (default 5), `RATE_LIMIT_EMAIL_WINDOW_SECONDS` (default 900) — per IP.
    - Optional: payment provider vars (Stripe/PayKilla) only when those methods are enabled.
 4. Run DB prepare as a one-off/predeploy step (same `DATABASE_URL` and env vars):
    - `python -m app.db_tasks prepare`

@@ -1,4 +1,4 @@
-﻿import os
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Generator
@@ -17,6 +17,9 @@ os.environ["STRIPE_SECRET_KEY"] = "sk_test_mock"
 os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_mock"
 os.environ["PAYKILLA_API_KEY"] = "pk_test_mock"
 os.environ["PAYKILLA_WEBHOOK_SECRET"] = "pk_whsec_test_mock"
+# Relax rate limit in tests so email-sending endpoints don't return 429
+os.environ["RATE_LIMIT_EMAIL_REQUESTS"] = "1000"
+os.environ["RATE_LIMIT_EMAIL_WINDOW_SECONDS"] = "1"
 
 # Create test database engine.
 test_engine = create_engine(
