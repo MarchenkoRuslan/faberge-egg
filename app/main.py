@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, lots, order
 from app.config import settings
-from app.db_init import init_db, seed_first_lot
+from app.db_init import run_migrations, run_seed, wait_for_db
 from app.models import get_db
 from app.services.email_service import get_resend_startup_diagnostics
 from app.webhooks import paykilla_callback, stripe_webhook
