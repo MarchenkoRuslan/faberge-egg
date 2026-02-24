@@ -1,3 +1,4 @@
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -9,8 +10,9 @@ from app.models.database import _normalize_database_url
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if config.config_file_name is not None and not logging.getLogger().handlers:
+    # Preserve app/container logging when Alembic runs in-process during FastAPI startup.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 try:
     configured_url = settings.DATABASE_URL

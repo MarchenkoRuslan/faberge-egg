@@ -134,5 +134,13 @@ class Settings:
     def DB_CONNECT_RETRY_DELAY_SECONDS(self) -> int:
         return self._get_int("DB_CONNECT_RETRY_DELAY_SECONDS", 1)
 
+    @property
+    def RUN_MIGRATIONS_ON_STARTUP(self) -> bool:
+        return self._get_bool("RUN_MIGRATIONS_ON_STARTUP", True)
+
+    @property
+    def RUN_SEED_ON_STARTUP(self) -> bool:
+        return self._get_bool("RUN_SEED_ON_STARTUP", True)
+
 
 settings = Settings()

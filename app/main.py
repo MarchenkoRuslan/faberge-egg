@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
@@ -15,6 +16,7 @@ from app.webhooks import paykilla_callback, stripe_webhook
 
 # Configure logging: flush after each record so logs appear immediately in Railway/containers
 _log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+_UVICORN_LOGGER_NAMES = ["uvicorn", "uvicorn.error", "uvicorn.access"]
 
 
 class _FlushingStreamHandler(logging.StreamHandler):
@@ -23,13 +25,38 @@ class _FlushingStreamHandler(logging.StreamHandler):
         self.flush()
 
 
+def _redirect_logger_handlers_to_stdout(logger_names: list[str]) -> int:
+    changed_handlers = 0
+    for logger_name in logger_names:
+        for handler in logging.getLogger(logger_name).handlers:
+            if isinstance(handler, logging.StreamHandler) and handler.stream is sys.stderr:
+                handler.stream = sys.stdout
+                changed_handlers += 1
+    return changed_handlers
+
+
+def _is_railway_runtime() -> bool:
+    return any(
+        os.getenv(env_name)
+        for env_name in (
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PUBLIC_DOMAIN",
+        )
+    )
+
+
 def _configure_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     if not root.handlers:
-        handler = _FlushingStreamHandler()
+        handler = _FlushingStreamHandler(stream=sys.stdout)
         handler.setFormatter(logging.Formatter(_log_format))
         root.addHandler(handler)
+    if _is_railway_runtime():
+        _redirect_logger_handlers_to_stdout(_UVICORN_LOGGER_NAMES)
 
 
 _configure_logging()
@@ -77,19 +104,6 @@ def _get_effective_cors_origins(cors_raw: str, is_railway: bool) -> tuple[list[s
             coerced_origins.append(origin)
 
     return normalized_origins, coerced_origins
-
-
-def _is_railway_runtime() -> bool:
-    return any(
-        os.getenv(env_name)
-        for env_name in (
-            "RAILWAY_PROJECT_ID",
-            "RAILWAY_SERVICE_ID",
-            "RAILWAY_ENVIRONMENT",
-            "RAILWAY_ENVIRONMENT_NAME",
-            "RAILWAY_PUBLIC_DOMAIN",
-        )
-    )
 
 
 def _validate_database_url_for_runtime(database_url: str) -> None:
@@ -224,16 +238,38 @@ def _validate_required_env_for_runtime() -> None:
         raise RuntimeError("Startup environment validation failed: " + " | ".join(errors))
 
 
+def _run_startup_database_tasks() -> None:
+    wait_for_db(
+        retries=settings.DB_CONNECT_RETRIES,
+        retry_delay_seconds=settings.DB_CONNECT_RETRY_DELAY_SECONDS,
+    )
+
+    if settings.RUN_MIGRATIONS_ON_STARTUP:
+        run_migrations()
+    else:
+        logger.info("Skipping DB migrations on startup (RUN_MIGRATIONS_ON_STARTUP=false)")
+
+    if not settings.RUN_SEED_ON_STARTUP:
+        logger.info("Skipping DB seed on startup (RUN_SEED_ON_STARTUP=false)")
+        return
+
+    # If migrations are disabled for this process, allow startup to proceed when the
+    # schema is not prepared yet (e.g. predeploy migration step has not run on a dev env).
+    run_seed(require_schema=settings.RUN_MIGRATIONS_ON_STARTUP)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database_url = "<unavailable>"
+    if _is_railway_runtime():
+        _redirect_logger_handlers_to_stdout(_UVICORN_LOGGER_NAMES)
     logger.info("Application startup initiated.")
     try:
         database_url = settings.DATABASE_URL
         logger.info("DATABASE_URL diagnostics at startup: %s", _db_url_diagnostics(database_url))
         _validate_database_url_for_runtime(database_url)
         _validate_required_env_for_runtime()
-        init_db()
+        _run_startup_database_tasks()
     except Exception as exc:
         diagnostics = (
             _db_url_diagnostics(database_url)
@@ -246,11 +282,6 @@ async def lifespan(app: FastAPI):
             diagnostics,
         )
         raise
-    db = next(get_db())
-    try:
-        seed_first_lot(db)
-    finally:
-        db.close()
     logger.info("Application startup completed successfully.")
     yield
 

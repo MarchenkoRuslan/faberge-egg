@@ -2,6 +2,8 @@ import pytest
 
 from app.main import (
     _db_url_diagnostics,
+    _redirect_logger_handlers_to_stdout,
+    _run_startup_database_tasks,
     _validate_database_url_for_runtime,
     _validate_required_env_for_runtime,
 )
@@ -49,6 +51,69 @@ def test_db_url_diagnostics_contains_actionable_tips():
     assert "host=127.0.0.1" in diagnostics
     assert "localhost" in diagnostics
     assert "sslmode" in diagnostics
+
+
+def test_redirect_logger_handlers_to_stdout_moves_stderr_stream_handler():
+    logger_name = f"tests.redirect.{uuid4()}"
+    test_logger = logging.getLogger(logger_name)
+    handler = logging.StreamHandler(sys.stderr)
+    test_logger.handlers = [handler]
+
+    try:
+        changed = _redirect_logger_handlers_to_stdout([logger_name])
+        assert changed == 1
+        assert handler.stream is sys.stdout
+    finally:
+        test_logger.handlers.clear()
+
+
+def test_redirect_logger_handlers_to_stdout_noops_for_stdout_handler():
+    logger_name = f"tests.redirect.{uuid4()}"
+    test_logger = logging.getLogger(logger_name)
+    handler = logging.StreamHandler(sys.stdout)
+    test_logger.handlers = [handler]
+
+    try:
+        changed = _redirect_logger_handlers_to_stdout([logger_name])
+        assert changed == 0
+        assert handler.stream is sys.stdout
+    finally:
+        test_logger.handlers.clear()
+
+
+def test_redirect_logger_handlers_to_stdout_is_idempotent():
+    logger_name = f"tests.redirect.{uuid4()}"
+    test_logger = logging.getLogger(logger_name)
+    handler = logging.StreamHandler(sys.stderr)
+    test_logger.handlers = [handler]
+
+    try:
+        first_changed = _redirect_logger_handlers_to_stdout([logger_name])
+        second_changed = _redirect_logger_handlers_to_stdout([logger_name])
+        assert first_changed == 1
+        assert second_changed == 0
+        assert handler.stream is sys.stdout
+    finally:
+        test_logger.handlers.clear()
+
+
+def test_redirect_logger_handlers_to_stdout_ignores_non_stream_handlers():
+    logger_name = f"tests.redirect.{uuid4()}"
+    test_logger = logging.getLogger(logger_name)
+    test_logger.handlers = [logging.NullHandler()]
+
+    try:
+        changed = _redirect_logger_handlers_to_stdout([logger_name])
+        assert changed == 0
+    finally:
+        test_logger.handlers.clear()
+
+
+def test_alembic_console_handler_uses_stdout():
+    parser = configparser.ConfigParser()
+    parser.read(Path(__file__).resolve().parents[1] / "alembic.ini")
+
+    assert "sys.stdout" in parser["handler_console"]["args"]
 
 
 def test_validate_required_env_accepts_local_defaults_outside_railway(monkeypatch):

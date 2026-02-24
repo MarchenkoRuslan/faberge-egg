@@ -3,11 +3,11 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.config import settings
-from app.models.database import _normalize_database_url, engine
+from app.models.database import SessionLocal, _normalize_database_url, engine
 from app.models import Lot, OneTimeToken, Order, RefreshToken, User  # noqa: F401 - register models
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,42 @@ def init_db():
         retry_delay_seconds=settings.DB_CONNECT_RETRY_DELAY_SECONDS,
     )
     run_migrations()
+
+
+def lots_table_exists() -> bool:
+    with engine.connect() as connection:
+        return inspect(connection).has_table("lots")
+
+
+def run_seed(*, require_schema: bool = True) -> bool:
+    """Seed initial application data.
+
+    When ``require_schema`` is False, missing tables are treated as a warning so a web
+    process can start without running migrations in the same startup lifecycle.
+    """
+    if not lots_table_exists():
+        message = "Cannot seed initial data: 'lots' table is missing. Run migrations first."
+        if require_schema:
+            raise RuntimeError(message)
+        logger.warning("Skipping DB seed on startup because lots table is missing (run migrations first)")
+        return False
+
+    db_session = SessionLocal()
+    try:
+        return seed_first_lot(db_session)
+    finally:
+        db_session.close()
+
+
+def prepare_database(*, include_seed: bool = True) -> None:
+    """Wait for DB, run migrations, and optionally seed initial data."""
+    wait_for_db(
+        retries=settings.DB_CONNECT_RETRIES,
+        retry_delay_seconds=settings.DB_CONNECT_RETRY_DELAY_SECONDS,
+    )
+    run_migrations()
+    if include_seed:
+        run_seed(require_schema=True)
 
 
 def run_migrations() -> None:
