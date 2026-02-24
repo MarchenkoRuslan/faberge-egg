@@ -92,6 +92,7 @@ def send_verify_email(to_email: str, display_name: str | None, token: str) -> No
     params: resend.Emails.SendParams = {
         "from": from_email,
         "to": [to_email],
+        "subject": "Confirm your email",
         "template": {
             "id": template_id,
             "variables": {
@@ -136,6 +137,7 @@ def send_password_reset_email(
     params: resend.Emails.SendParams = {
         "from": from_email,
         "to": [to_email],
+        "subject": "Reset your password",
         "template": {
             "id": template_id,
             "variables": {
