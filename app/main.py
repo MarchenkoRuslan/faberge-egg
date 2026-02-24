@@ -10,7 +10,7 @@ from app.api import auth, lots, order
 from app.config import settings
 from app.db_init import init_db, seed_first_lot
 from app.models import get_db
-from app.services.email_service import get_mailjet_startup_diagnostics
+from app.services.email_service import get_resend_startup_diagnostics
 from app.webhooks import paykilla_callback, stripe_webhook
 
 # Configure logging: flush after each record so logs appear immediately in Railway/containers
@@ -201,10 +201,10 @@ def _validate_cors_origins_env(is_railway: bool, errors: list[str], warnings: li
         )
 
 
-def _append_mailjet_startup_diagnostics(warnings: list[str]) -> None:
-    mailjet_diagnostics, mailjet_warnings = get_mailjet_startup_diagnostics()
-    logger.info("Mailjet diagnostics at startup: %s", mailjet_diagnostics)
-    warnings.extend(mailjet_warnings)
+def _append_resend_startup_diagnostics(warnings: list[str]) -> None:
+    resend_diagnostics, resend_warnings = get_resend_startup_diagnostics()
+    logger.info("Resend diagnostics at startup: %s", resend_diagnostics)
+    warnings.extend(resend_warnings)
 
 
 def _validate_required_env_for_runtime() -> None:
@@ -215,7 +215,7 @@ def _validate_required_env_for_runtime() -> None:
     _validate_jwt_env(is_railway, errors)
     _validate_base_url_env(is_railway, errors, warnings)
     _validate_cors_origins_env(is_railway, errors, warnings)
-    _append_mailjet_startup_diagnostics(warnings)
+    _append_resend_startup_diagnostics(warnings)
 
     if warnings:
         logger.warning("Startup environment warnings: %s", " | ".join(warnings))

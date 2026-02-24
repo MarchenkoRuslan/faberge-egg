@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from fastapi import status
@@ -336,3 +336,48 @@ def test_me_returns_current_user_profile(client, auth_headers):
 def test_me_requires_authentication(client):
     response = client.get("/api/auth/me")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_verify_email_validate_valid_token_returns_200(client):
+    with patch("app.api.auth.send_verify_email") as mock_send:
+        client.post("/api/auth/register", json=_register_payload(email="validate-v@example.com"))
+    token = mock_send.call_args.args[2]
+    response = client.post("/api/auth/verify-email/validate", json={"token": token})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["valid"] is True
+
+
+def test_verify_email_validate_invalid_token_returns_400(client):
+    response = client.post(
+        "/api/auth/verify-email/validate",
+        json={"token": "invalid-or-expired-token"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "link is no longer active" in response.json()["detail"].lower()
+
+
+def test_verify_email_confirm_invalid_token_returns_link_no_longer_active(client):
+    response = client.post(
+        "/api/auth/verify-email/confirm",
+        json={"token": "invalid-token"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "link is no longer active" in response.json()["detail"].lower()
+
+
+def test_password_reset_validate_valid_token_returns_200(client, test_user):
+    with patch("app.api.auth.send_password_reset_email") as mock_send:
+        client.post("/api/auth/password/forgot", json={"email": "test@example.com"})
+    token = mock_send.call_args.args[2]
+    response = client.post("/api/auth/password/reset/validate", json={"token": token})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["valid"] is True
+
+
+def test_password_reset_validate_invalid_token_returns_400(client):
+    response = client.post(
+        "/api/auth/password/reset/validate",
+        json={"token": "invalid-or-expired-token"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "link is no longer active" in response.json()["detail"].lower()

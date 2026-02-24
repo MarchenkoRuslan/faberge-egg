@@ -19,14 +19,17 @@ class Settings:
 
     @property
     def FRONTEND_URL(self) -> str:
+        """Base URL of the frontend. Used to build links in emails: FRONTEND_URL + path + ?token=..."""
         return os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     @property
     def EMAIL_VERIFY_PATH(self) -> str:
+        """Frontend path for email verification. Link = FRONTEND_URL + EMAIL_VERIFY_PATH + ?token=..."""
         return os.getenv("EMAIL_VERIFY_PATH", "/verify-email")
 
     @property
     def PASSWORD_RESET_PATH(self) -> str:
+        """Frontend path for password reset. Link = FRONTEND_URL + PASSWORD_RESET_PATH + ?token=..."""
         return os.getenv("PASSWORD_RESET_PATH", "/restore-password")
 
     @property
@@ -65,28 +68,23 @@ class Settings:
         return self._get_int("EMAIL_RESEND_COOLDOWN_SECONDS", 60)
 
     @property
-    def MAILJET_API_KEY(self) -> str:
-        return os.getenv("MAILJET_API_KEY", "").strip()
+    def RESEND_API_KEY(self) -> str:
+        return os.getenv("RESEND_API_KEY", "").strip()
 
     @property
-    def MAILJET_SECRET_KEY(self) -> str:
-        return os.getenv("MAILJET_SECRET_KEY", "").strip()
+    def RESEND_FROM_EMAIL(self) -> str:
+        """Sender for Resend: 'Name <email@domain.com>' or 'email@domain.com'."""
+        return os.getenv("RESEND_FROM_EMAIL", "").strip()
 
     @property
-    def MAILJET_FROM_EMAIL(self) -> str:
-        return os.getenv("MAILJET_FROM_EMAIL", "").strip()
+    def RESEND_TEMPLATE_VERIFY_EMAIL(self) -> str:
+        """Resend template id for email verification (registration)."""
+        return os.getenv("RESEND_TEMPLATE_VERIFY_EMAIL", "").strip()
 
     @property
-    def MAILJET_FROM_NAME(self) -> str:
-        return os.getenv("MAILJET_FROM_NAME", "Marketplace API").strip()
-
-    @property
-    def MAILJET_API_URL(self) -> str:
-        return os.getenv("MAILJET_API_URL", "https://api.mailjet.com/v3.1/send").strip()
-
-    @property
-    def MAILJET_TIMEOUT_SECONDS(self) -> int:
-        return self._get_int("MAILJET_TIMEOUT_SECONDS", 10)
+    def RESEND_TEMPLATE_PASSWORD_RESET(self) -> str:
+        """Resend template id for password reset."""
+        return os.getenv("RESEND_TEMPLATE_PASSWORD_RESET", "").strip()
 
     @property
     def STRIPE_SECRET_KEY(self) -> str:

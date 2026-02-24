@@ -62,6 +62,23 @@ def issue_one_time_token(
     return raw, record
 
 
+def validate_one_time_token(db: Session, raw_token: str, purpose: str) -> OneTimeToken | None:
+    """Check if token is valid (not used, not expired). Does not consume the token."""
+    token_hash = _hash_token(raw_token)
+    now = utcnow()
+    db_now = _db_datetime(db, now)
+    return (
+        db.query(OneTimeToken)
+        .filter(
+            OneTimeToken.token_hash == token_hash,
+            OneTimeToken.purpose == purpose,
+            OneTimeToken.used_at.is_(None),
+            OneTimeToken.expires_at > db_now,
+        )
+        .first()
+    )
+
+
 def consume_one_time_token(db: Session, raw_token: str, purpose: str) -> OneTimeToken | None:
     token_hash = _hash_token(raw_token)
     now = utcnow()

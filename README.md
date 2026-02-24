@@ -44,10 +44,11 @@ DATABASE_URL=postgresql://user:password@localhost:5432/marketplace
 # REQUIRED IN PRODUCTION (default is insecure)
 JWT_SECRET=change-me-in-production
 
-# REQUIRED FOR EMAIL FLOWS (register verification + password reset)
-MAILJET_API_KEY=
-MAILJET_SECRET_KEY=
-MAILJET_FROM_EMAIL=
+# REQUIRED FOR EMAIL FLOWS (register verification + password reset, Resend)
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=Acme <onboarding@resend.dev>
+RESEND_TEMPLATE_VERIFY_EMAIL=
+RESEND_TEMPLATE_PASSWORD_RESET=
 
 # OPTIONAL: auth token settings
 JWT_ALGORITHM=HS256
@@ -61,12 +62,6 @@ EMAIL_RESEND_COOLDOWN_SECONDS=60
 FRONTEND_URL=http://localhost:3000
 EMAIL_VERIFY_PATH=/verify-email
 PASSWORD_RESET_PATH=/restore-password
-
-# OPTIONAL: Mailjet details
-# Sender email/domain must be verified in Mailjet.
-MAILJET_FROM_NAME=Marketplace API
-MAILJET_API_URL=https://api.mailjet.com/v3.1/send
-MAILJET_TIMEOUT_SECONDS=10
 
 # OPTIONAL: Stripe (required only if Stripe payments are enabled)
 STRIPE_SECRET_KEY=
@@ -106,8 +101,8 @@ alembic revision -m "describe change"
 3. Configure app variables:
    - Required: `DATABASE_URL` (use Railway Postgres reference), `JWT_SECRET`
    - Recommended for deployment: `BASE_URL`, `CORS_ORIGINS`
-   - Required for email auth flows: `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_FROM_EMAIL`
-   - Mailjet sender email/domain must be verified before sending.
+   - Required for email auth flows: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_TEMPLATE_VERIFY_EMAIL`, `RESEND_TEMPLATE_PASSWORD_RESET`
+   - Resend sender domain must be verified; template variables: verify `CONFIRM_LINK`, `USER_NAME`; reset `RESET_LINK`, `USER_NAME`.
    - Optional: payment provider vars (Stripe/PayKilla) only when those methods are enabled.
 4. Configure provider webhooks:
    - Stripe: `https://<railway-domain>/webhooks/stripe`

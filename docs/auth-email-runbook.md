@@ -1,27 +1,31 @@
-# Auth/Email Runbook (Railway + Mailjet)
+# Auth/Email Runbook (Railway + Resend)
 
 ## Register status codes (`POST /api/auth/register`)
 
 - `200`: user created and verification email send completed successfully.
-- `409`: email already registered (Mailjet is not called in this branch).
+- `409`: email already registered (Resend is not called in this branch).
 - `422`: request validation error (email/password/terms payload).
 - `503`: verification email send failed (user creation is rolled back).
 
 ## First checks (Railway variables)
 
-Required for registration email delivery:
+Required for registration and password-reset email delivery:
 
-- `MAILJET_API_KEY`
-- `MAILJET_SECRET_KEY`
-- `MAILJET_FROM_EMAIL`
+- `RESEND_API_KEY` — from [Resend API Keys](https://resend.com/api-keys)
+- `RESEND_FROM_EMAIL` — sender, e.g. `Acme <onboarding@resend.dev>` (domain must be [verified](https://resend.com/domains))
+- `RESEND_TEMPLATE_VERIFY_EMAIL` — template id for email verification (from [Resend Templates](https://resend.com/templates))
+- `RESEND_TEMPLATE_PASSWORD_RESET` — template id for password reset
+
+### Template variables (must match your Resend templates)
+
+- **Verify email template**: `CONFIRM_LINK` (full URL with token), `USER_NAME` (display name or "there").
+- **Password reset template**: `RESET_LINK` (full URL with token), `USER_NAME`.
+
+Define these variables in your templates in the Resend dashboard and use them in the template body (e.g. `{{{CONFIRM_LINK}}}`, `{{{USER_NAME}}}`).
 
 Recommended / supporting:
 
-- `MAILJET_FROM_NAME`
-- `MAILJET_API_URL` (default should point to `api.mailjet.com`)
-- `MAILJET_TIMEOUT_SECONDS`
-- `FRONTEND_URL`
-- `EMAIL_VERIFY_PATH`
+- `FRONTEND_URL`, `EMAIL_VERIFY_PATH`, `PASSWORD_RESET_PATH` (used to build links passed into templates)
 
 ## What to inspect in Railway logs
 
@@ -30,26 +34,25 @@ Search for register flow markers:
 - `register attempt`
 - `register duplicate_email`
 - `register verification_email_send_started`
+- `register verification_email_sent_ok REGISTER_EMAIL_SENT`
 - `register verification_email_send_failed`
 - `register success`
 
-Search for Mailjet flow markers:
+Search for Resend flow markers:
 
-- `Mailjet send success`
-- `Mailjet send failure`
-- `Mailjet retry scheduled`
+- `Resend send success type=verify_email`
+- `Resend send success type=password_reset`
+- `Resend send failure type=...`
 
 Notes:
 
 - Emails are masked in logs.
-- API keys / secrets must never appear in logs.
+- API keys must never appear in logs.
 
-## What to inspect in Mailjet
+## What to inspect in Resend
 
-- API key belongs to the expected account/project.
-- `MAILJET_FROM_EMAIL` sender/domain is verified.
-- Events for the target recipient around the request timestamp.
-- Suppression / blocklist state for the recipient.
+- [Dashboard](https://resend.com/emails): delivery status, opens, bounces.
+- Domain and sender verified; template IDs match env vars; template variables match (`CONFIRM_LINK` / `RESET_LINK`, `USER_NAME`).
 
 ## Reproduce with curl
 
@@ -73,7 +76,6 @@ curl -i -X POST "https://<your-domain>/api/auth/register" \
 Repeat the same request and confirm:
 
 - HTTP `409`
-- no new Mailjet event
 - backend log contains `register duplicate_email`
 
 ### Resend verify email
@@ -91,7 +93,6 @@ Expected:
 
 ## Common interpretations
 
-- `409` on register response: email already registered (duplicate-email branch); Mailjet is not called.
-- `503` + `Mailjet send failure`: Mailjet transport/HTTP/message error; check sender verification and API keys.
-- Mailjet HTTP **409** in logs: Mailjet returned Conflict. The app retries once; if it keeps failing, check Mailjet dashboard (sender/domain verification, account limits) and the logged `detail=` (ErrorCode/ErrorMessage). Sender and domain must be verified in [Sender domains & addresses](https://app.mailjet.com/account/sender).
-- `422`: frontend payload bug or validation mismatch.
+- `409` on register: email already registered; Resend is not called.
+- `503` + `Resend send failure`: check Resend API key, from address, template ids and variables; see log `error=...`.
+- `422`: frontend payload or validation mismatch.

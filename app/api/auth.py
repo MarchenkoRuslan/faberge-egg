@@ -22,6 +22,7 @@ from app.services.auth_tokens import (
     revoke_refresh_token_by_raw,
     rotate_refresh_token,
     utcnow,
+    validate_one_time_token,
 )
 from app.services.email_service import send_password_reset_email, send_verify_email
 from app.utils.redaction import mask_email
@@ -92,6 +93,14 @@ class EmailVerifyRequest(AuthSchema):
 
 class EmailVerifyConfirmRequest(AuthSchema):
     token: str
+
+
+class TokenValidateRequest(AuthSchema):
+    token: str
+
+
+class TokenValidateResponse(AuthSchema):
+    valid: bool = True
 
 
 class RefreshRequest(AuthSchema):
@@ -354,6 +363,25 @@ def request_email_verification(
 
 
 @router.post(
+    "/verify-email/validate",
+    response_model=TokenValidateResponse,
+    summary="Validate email verification link (token still active)",
+)
+def validate_email_verification_link(
+    body: EmailVerifyConfirmRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Check if the verification link token is still valid. Does not consume the token."""
+    token = validate_one_time_token(db, body.token, ONE_TIME_PURPOSE_EMAIL_VERIFY)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link is no longer active",
+        )
+    return TokenValidateResponse(valid=True)
+
+
+@router.post(
     "/verify-email/confirm",
     response_model=MessageResponse,
     summary="Confirm email verification token",
@@ -367,7 +395,7 @@ def confirm_email_verification(
     if not token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
+            detail="Link is no longer active",
         )
 
     user = db.query(User).filter(User.id == token.user_id).first()
@@ -470,6 +498,25 @@ def request_password_reset(
 
 
 @router.post(
+    "/password/reset/validate",
+    response_model=TokenValidateResponse,
+    summary="Validate password reset link (token still active)",
+)
+def validate_password_reset_link(
+    body: TokenValidateRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Check if the password reset link token is still valid. Does not consume the token."""
+    token = validate_one_time_token(db, body.token, ONE_TIME_PURPOSE_PASSWORD_RESET)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link is no longer active",
+        )
+    return TokenValidateResponse(valid=True)
+
+
+@router.post(
     "/password/reset",
     response_model=MessageResponse,
     summary="Reset password by token",
@@ -483,7 +530,7 @@ def reset_password(
     if not token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token",
+            detail="Link is no longer active",
         )
 
     user = db.query(User).filter(User.id == token.user_id).first()
