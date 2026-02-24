@@ -106,6 +106,21 @@ def _get_effective_cors_origins(cors_raw: str, is_railway: bool) -> tuple[list[s
     return normalized_origins, coerced_origins
 
 
+def _cors_allow_origins() -> list[str]:
+    """CORS allow_origins: CORS_ORIGINS plus origin derived from FRONTEND_URL (scheme + host + port)."""
+    is_railway = _is_railway_runtime()
+    origins, _ = _get_effective_cors_origins(settings.CORS_ORIGINS, is_railway)
+    frontend_normalized, _ = _normalize_http_url_for_railway(settings.FRONTEND_URL.strip(), is_railway)
+    parsed = urlparse(frontend_normalized)
+    if parsed.scheme and parsed.netloc:
+        frontend_origin = f"{parsed.scheme}://{parsed.netloc}"
+    else:
+        frontend_origin = frontend_normalized
+    if _is_http_url(frontend_origin) and frontend_origin not in origins:
+        origins = [*origins, frontend_origin]
+    return origins
+
+
 def _validate_database_url_for_runtime(database_url: str) -> None:
     parsed = urlparse(database_url)
     scheme = parsed.scheme
@@ -334,7 +349,7 @@ app.openapi = custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_get_effective_cors_origins(settings.CORS_ORIGINS, _is_railway_runtime())[0],
+    allow_origins=_cors_allow_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
