@@ -10,7 +10,7 @@ sqlalchemy==2.0.36
 psycopg[binary]==3.2.3
 alembic==1.18.4
 boto3>=1.35.0
-stripe==11.3.0
+stripe==14.4.0
 resend>=2.0.0
 httpx==0.28.1
 pytest==8.0.0
