@@ -104,3 +104,48 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - Seed creates showroom "latvian-treasure", asset "faberge-egg" (with commerce fields), and creates media records with storage keys under `latvian-treasure/faberge-egg/`.
 - The `lots` table has been merged into `assets`: all commerce fields (fractions, prices, is_active) now live directly on the Asset model.
 
+## Cursor Cloud specific instructions
+
+### Prerequisites (already installed by VM snapshot)
+
+- Python 3.12 with `~/.local/bin` on `PATH`
+- PostgreSQL 16 (local, started via `sudo pg_ctlcluster 16 main start`)
+- All pip packages from `requirements.txt` + `flake8`
+
+### Running tests
+
+Tests use SQLite via `tests/conftest.py` — no PostgreSQL needed:
+
+```
+pytest -q
+```
+
+### Lint
+
+```
+flake8 app tests --count --select=E9,F63,F7,F82 --show-source --statistics
+flake8 app tests --count --exit-zero --statistics
+```
+
+### Running the dev server
+
+Alembic migrations require PostgreSQL (SQLite is NOT supported for `ALTER constraints`). Start PostgreSQL first, then launch uvicorn:
+
+```bash
+sudo pg_ctlcluster 16 main start
+DATABASE_URL="postgresql://ubuntu:devpassword@localhost/marketplace" \
+  JWT_SECRET="dev-secret-key" \
+  BASE_URL="http://localhost:8000" \
+  CORS_ORIGINS="http://localhost:3000" \
+  FRONTEND_URL="http://localhost:3000" \
+  uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+The app runs migrations and seeds data automatically on startup. Swagger UI is at `http://localhost:8000/docs`.
+
+### Gotchas
+
+- The app uses `pbkdf2_sha256` for password hashing (NOT bcrypt) — see `pwd_context` in `app/api/auth.py`.
+- Registration requires Resend email service (`RESEND_API_KEY`). Without it, registration fails. For dev testing, create users directly in the DB or use `tests/conftest.py` fixtures.
+- S3, Stripe, PayKilla, and Resend are all optional for local dev — the app starts and core endpoints work without them.
+- `~/.local/bin` must be on `PATH` for `uvicorn`, `pytest`, `flake8` commands to work.
