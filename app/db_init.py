@@ -203,7 +203,7 @@ _INITIAL_MEDIA = [
         "media_type": "image/jpeg",
         "storage_key": "latvian-treasure/faberge-egg/hero.jpg",
         "filename": "hero.jpg",
-        "alt_text": "Latvian Faberge Egg",
+        "alt_text": "Jeweled Faberge Easter Egg by Mikhail Perkhin",
         "sort_order": 0,
     },
     {
@@ -240,7 +240,7 @@ def seed_showroom_and_asset(db_session) -> bool:
         name="Latvian Faberge Treasure",
         headline="A unique collection of Faberge masterpieces",
         description=(
-            "Discover the Latvian Faberge Treasure -- an exclusive collection "
+            "Discover the Latvian Faberge Treasure — an exclusive collection "
             "of imperial Faberge eggs available for fractional ownership."
         ),
         status="active",
@@ -257,13 +257,20 @@ def seed_showroom_and_asset(db_session) -> bool:
     asset = Asset(
         showroom_id=showroom.id,
         slug="faberge-egg",
-        name="Faberge Egg",
-        headline="Imperial Faberge Egg -- fractional ownership opportunity",
+        name="Jeweled Easter Egg",
+        headline="By Faberge firm",
         description=(
-            "An authentic imperial Faberge egg from the Latvian national collection. "
-            "Own a fraction of this extraordinary piece of art and history."
+            "An authentic jeweled Easter Egg created in the workshop of Carl Faberge "
+            "during the firm's golden period and attributed to Mikhail Perkhin, one of "
+            "Faberge's leading masters. The piece bears the maker's personal hallmark "
+            "and stylistic features characteristic of Perkhin's late 19th century work."
         ),
         meta={
+            "maker": "Faberge firm",
+            "master": "Mikhail Perkhin",
+            "year": "1898",
+            "dimensions": "7.5 x 15.1 cm",
+            "material": "Gold",
             "origin": "Latvia",
             "period": "Imperial Russia",
             "type": "Decorative Art",
