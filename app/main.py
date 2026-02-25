@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, lots, order
+from app.api import assets, auth, lots, order, showrooms
 from app.config import settings
 from app.db_init import run_migrations, run_seed, wait_for_db
 from app.models import get_db
@@ -313,6 +313,8 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
     openapi_tags=[
+        {"name": "Showrooms", "description": "Browse showrooms and their assets."},
+        {"name": "Assets", "description": "Asset details with media and lot info."},
         {"name": "Auth", "description": "Registration, email verification, login, profile, password reset."},
         {"name": "Lots", "description": "List and get lots (fractions, prices)."},
         {"name": "Orders", "description": "Create order and list my orders (requires auth)."},
@@ -355,6 +357,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(showrooms.router, prefix="/api/showrooms", tags=["Showrooms"])
+app.include_router(assets.router, prefix="/api/assets", tags=["Assets"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(lots.router, prefix="/api/lots", tags=["Lots"])
 app.include_router(order.router, prefix="/api/orders", tags=["Orders"])

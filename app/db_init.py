@@ -8,7 +8,9 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.config import settings
 from app.models.database import SessionLocal, _normalize_database_url, engine
-from app.models import Lot, OneTimeToken, Order, RefreshToken, User  # noqa: F401 - register models
+from app.models import (  # noqa: F401 - register models
+    Asset, AssetMedia, Lot, OneTimeToken, Order, RefreshToken, Showroom, User,
+)
 
 logger = logging.getLogger(__name__)
 POSTGRES_MIGRATION_LOCK_KEY = 640_017_451
@@ -48,9 +50,13 @@ def init_db():
     run_migrations()
 
 
-def lots_table_exists() -> bool:
+def _table_exists(table_name: str) -> bool:
     with engine.connect() as connection:
-        return inspect(connection).has_table("lots")
+        return inspect(connection).has_table(table_name)
+
+
+def lots_table_exists() -> bool:
+    return _table_exists("lots")
 
 
 def run_seed(*, require_schema: bool = True) -> bool:
@@ -66,9 +72,17 @@ def run_seed(*, require_schema: bool = True) -> bool:
         logger.warning("Skipping DB seed on startup because lots table is missing (run migrations first)")
         return False
 
+    showrooms_ready = _table_exists("showrooms")
+    if not showrooms_ready and require_schema:
+        raise RuntimeError("Cannot seed showroom data: 'showrooms' table is missing. Run migrations first.")
+    if not showrooms_ready:
+        logger.warning("Skipping showroom seed: 'showrooms' table not yet created (run migrations first)")
+
     db_session = SessionLocal()
     try:
-        return seed_first_lot(db_session)
+        lot_seeded = seed_first_lot(db_session)
+        showroom_seeded = seed_showroom_and_asset(db_session) if showrooms_ready else False
+        return lot_seeded or showroom_seeded
     finally:
         db_session.close()
 
@@ -170,7 +184,6 @@ def seed_first_lot(db_session) -> bool:
         return True
     except IntegrityError:
         db_session.rollback()
-        # A parallel startup may have inserted the same unique slug moments earlier.
         if db_session.query(Lot).filter(Lot.slug == "faberge-egg").first():
             logger.info("Initial lot was inserted by another startup instance; continuing")
             return False
@@ -178,3 +191,113 @@ def seed_first_lot(db_session) -> bool:
     except Exception:
         db_session.rollback()
         raise
+
+
+_INITIAL_MEDIA = [
+    {
+        "kind": "hero",
+        "media_type": "image/jpeg",
+        "storage_key": "latvian-treasure/faberge-egg/hero.jpg",
+        "filename": "hero.jpg",
+        "alt_text": "Latvian Faberge Egg",
+        "sort_order": 0,
+    },
+    {
+        "kind": "gallery",
+        "media_type": "image/jpeg",
+        "storage_key": "latvian-treasure/faberge-egg/gallery-1.jpg",
+        "filename": "gallery-1.jpg",
+        "alt_text": "Faberge Egg detail view",
+        "sort_order": 1,
+    },
+    {
+        "kind": "gallery",
+        "media_type": "image/jpeg",
+        "storage_key": "latvian-treasure/faberge-egg/gallery-2.jpg",
+        "filename": "gallery-2.jpg",
+        "alt_text": "Faberge Egg side view",
+        "sort_order": 2,
+    },
+]
+
+
+def seed_showroom_and_asset(db_session) -> bool:
+    """Create the initial showroom, asset, media records and link the lot.
+
+    Idempotent: skips when the showroom already exists.
+    """
+    if db_session.query(Showroom).filter(Showroom.slug == "latvian-treasure").first():
+        _ensure_lot_asset_link(db_session)
+        logger.info("Showroom 'latvian-treasure' already exists; skipping seed")
+        return False
+
+    showroom = Showroom(
+        slug="latvian-treasure",
+        name="Latvian Faberge Treasure",
+        headline="A unique collection of Faberge masterpieces",
+        description=(
+            "Discover the Latvian Faberge Treasure -- an exclusive collection "
+            "of imperial Faberge eggs available for fractional ownership."
+        ),
+        status="active",
+        sort_order=0,
+    )
+    db_session.add(showroom)
+    try:
+        db_session.flush()
+    except IntegrityError:
+        db_session.rollback()
+        logger.info("Showroom 'latvian-treasure' inserted by another instance; continuing")
+        return False
+
+    asset = Asset(
+        showroom_id=showroom.id,
+        slug="faberge-egg",
+        name="Faberge Egg",
+        headline="Imperial Faberge Egg -- fractional ownership opportunity",
+        description=(
+            "An authentic imperial Faberge egg from the Latvian national collection. "
+            "Own a fraction of this extraordinary piece of art and history."
+        ),
+        meta={
+            "origin": "Latvia",
+            "period": "Imperial Russia",
+            "type": "Decorative Art",
+        },
+        status="active",
+        sort_order=0,
+    )
+    db_session.add(asset)
+    db_session.flush()
+
+    for media_data in _INITIAL_MEDIA:
+        media = AssetMedia(asset_id=asset.id, **media_data)
+        db_session.add(media)
+
+    try:
+        db_session.commit()
+        logger.info("Showroom, asset and media seeded successfully")
+    except IntegrityError:
+        db_session.rollback()
+        logger.info("Showroom seed conflict (parallel startup); continuing")
+        return False
+    except Exception:
+        db_session.rollback()
+        raise
+
+    _ensure_lot_asset_link(db_session)
+    return True
+
+
+def _ensure_lot_asset_link(db_session) -> None:
+    """Link the 'faberge-egg' lot to the 'faberge-egg' asset if not already linked."""
+    lot = db_session.query(Lot).filter(Lot.slug == "faberge-egg").first()
+    asset = db_session.query(Asset).filter(Asset.slug == "faberge-egg").first()
+    if lot and asset and lot.asset_id != asset.id:
+        lot.asset_id = asset.id
+        try:
+            db_session.commit()
+            logger.info("Linked lot '%s' to asset '%s'", lot.slug, asset.slug)
+        except Exception:
+            db_session.rollback()
+            raise

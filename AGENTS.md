@@ -24,6 +24,15 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
   - `app/models/user.py`
   - `tests/test_auth.py`
   - `tests/test_dependencies.py`
+- Showrooms/assets/media:
+  - `app/api/showrooms.py`
+  - `app/api/assets.py`
+  - `app/models/showroom.py`
+  - `app/models/asset.py`
+  - `app/models/asset_media.py`
+  - `app/schemas/showrooms.py`
+  - `app/services/storage.py`
+  - `tests/test_showrooms.py`
 - Lots/orders business flow:
   - `app/api/lots.py`
   - `app/api/order.py`
@@ -60,6 +69,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - Run the smallest relevant test slice before full suite:
   - Startup/env: `pytest -q tests/test_startup_config.py`
   - Auth: `pytest -q tests/test_auth.py tests/test_dependencies.py`
+  - Showrooms/assets: `pytest -q tests/test_showrooms.py`
   - Lots/orders: `pytest -q tests/test_lots.py tests/test_orders.py`
   - Payments: `pytest -q tests/test_services.py tests/test_webhooks.py`
 - Run full suite for cross-cutting changes: `pytest -q`.
@@ -70,4 +80,6 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - Startup validation logic lives in `app/main.py` (database URL + required env checks).
 - `DATABASE_URL` is mandatory in normal runtime (see `app/config.py`).
 - `.env` is not auto-loaded in code; provide environment via process vars or `uvicorn --env-file .env`.
+- S3/storage config (`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, etc.) is optional; storage service degrades gracefully when not configured.
+- Seed creates showroom "latvian-treasure", asset "faberge-egg", links to lot, and creates media records with storage keys under `latvian-treasure/faberge-egg/`.
 

@@ -153,5 +153,31 @@ class Settings:
     def RUN_SEED_ON_STARTUP(self) -> bool:
         return self._get_bool("RUN_SEED_ON_STARTUP", True)
 
+    # --- S3 / Railway Bucket ---
+
+    @property
+    def S3_ENDPOINT(self) -> str:
+        return os.getenv("S3_ENDPOINT", os.getenv("ENDPOINT", ""))
+
+    @property
+    def S3_ACCESS_KEY_ID(self) -> str:
+        return os.getenv("S3_ACCESS_KEY_ID", os.getenv("ACCESS_KEY_ID", ""))
+
+    @property
+    def S3_SECRET_ACCESS_KEY(self) -> str:
+        return os.getenv("S3_SECRET_ACCESS_KEY", os.getenv("SECRET_ACCESS_KEY", ""))
+
+    @property
+    def S3_BUCKET(self) -> str:
+        return os.getenv("S3_BUCKET", os.getenv("BUCKET", ""))
+
+    @property
+    def S3_REGION(self) -> str:
+        return os.getenv("S3_REGION", os.getenv("REGION", "auto"))
+
+    @property
+    def PRESIGNED_URL_EXPIRES(self) -> int:
+        return self._get_int("PRESIGNED_URL_EXPIRES", 3600)
+
 
 settings = Settings()

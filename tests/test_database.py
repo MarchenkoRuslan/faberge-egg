@@ -1,4 +1,4 @@
-﻿from unittest.mock import MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -164,15 +164,19 @@ def test_run_seed_opens_session_and_calls_seed_first_lot(monkeypatch):
     db_session = MagicMock()
     session_factory = MagicMock(return_value=db_session)
     seed_mock = MagicMock(return_value=True)
+    showroom_seed_mock = MagicMock(return_value=False)
 
     monkeypatch.setattr("app.db_init.lots_table_exists", lambda: True)
+    monkeypatch.setattr("app.db_init._table_exists", lambda t: True)
     monkeypatch.setattr("app.db_init.SessionLocal", session_factory)
     monkeypatch.setattr("app.db_init.seed_first_lot", seed_mock)
+    monkeypatch.setattr("app.db_init.seed_showroom_and_asset", showroom_seed_mock)
 
     assert run_seed(require_schema=True) is True
 
     session_factory.assert_called_once()
     seed_mock.assert_called_once_with(db_session)
+    showroom_seed_mock.assert_called_once_with(db_session)
     db_session.close.assert_called_once()
 
 
