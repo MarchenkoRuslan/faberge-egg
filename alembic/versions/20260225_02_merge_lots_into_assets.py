@@ -44,7 +44,7 @@ def upgrade() -> None:
     if not _column_exists(inspector, "assets", "sold_special_fractions"):
         op.add_column("assets", sa.Column("sold_special_fractions", sa.Integer(), nullable=False, server_default=sa.text("0")))
     if not _column_exists(inspector, "assets", "is_active"):
-        op.add_column("assets", sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")))
+        op.add_column("assets", sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")))
 
     # 2. Migrate data from lots to assets (where linked)
     if _table_exists(inspector, "lots"):
@@ -122,7 +122,7 @@ def downgrade() -> None:
             sa.Column("price_special_eur", sa.Numeric(10, 4), nullable=False),
             sa.Column("price_nominal_eur", sa.Numeric(10, 4), nullable=False),
             sa.Column("sold_special_fractions", sa.Integer(), nullable=False, server_default=sa.text("0")),
-            sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+            sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         )
         op.create_index("ix_lots_id", "lots", ["id"], unique=False)
