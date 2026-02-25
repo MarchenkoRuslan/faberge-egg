@@ -1,6 +1,6 @@
 import stripe
 
-from app.services.url_utils import append_query_param
+from app.services.url_utils import append_query_param, validate_redirect_url
 
 
 def create_checkout_session(
@@ -16,6 +16,8 @@ def create_checkout_session(
 
     if not settings.STRIPE_SECRET_KEY:
         raise ValueError("STRIPE_SECRET_KEY is not set")
+    validate_redirect_url(success_url)
+    validate_redirect_url(cancel_url)
     stripe.api_key = settings.STRIPE_SECRET_KEY
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],

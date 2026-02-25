@@ -2,8 +2,21 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import HTTPException, status
 
-
 ALLOWED_REDIRECT_SCHEMES = {"http", "https"}
+
+
+class InvalidRedirectURLError(ValueError):
+    """Raised when redirect URL validation fails (client error → HTTP 400)."""
+
+
+def validate_redirect_url(url: str) -> str:
+    """Validate redirect URL (scheme, no credentials). Raises InvalidRedirectURLError if invalid."""
+    parts = urlsplit(url)
+    if parts.scheme not in ALLOWED_REDIRECT_SCHEMES or not parts.netloc:
+        raise InvalidRedirectURLError("URL must be absolute http(s)")
+    if parts.username or parts.password:
+        raise InvalidRedirectURLError("URL must not contain credentials")
+    return url
 
 
 def append_query_param(url: str, key: str, value: str | int) -> str:
@@ -20,15 +33,10 @@ def validate_checkout_redirect_url(url: str, field_name: str) -> str:
 
     Allows only absolute HTTP(S) URLs without embedded user credentials.
     """
-    parts = urlsplit(url)
-    if parts.scheme not in ALLOWED_REDIRECT_SCHEMES or not parts.netloc:
+    try:
+        return validate_redirect_url(url)
+    except InvalidRedirectURLError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{field_name} must be an absolute http(s) URL",
-        )
-    if parts.username or parts.password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{field_name} must not contain credentials",
-        )
-    return url
+            detail=f"{field_name}: {e}",
+        ) from e

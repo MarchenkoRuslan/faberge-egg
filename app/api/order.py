@@ -20,7 +20,7 @@ from app.services.payment_gateways import (
     get_enabled_payment_methods,
     get_payment_gateways,
 )
-from app.services.url_utils import validate_checkout_redirect_url
+from app.services.url_utils import InvalidRedirectURLError, validate_checkout_redirect_url
 
 router = APIRouter()
 
@@ -122,6 +122,9 @@ def _create_checkout_or_raise(
             success_url=success_url,
             cancel_url=cancel_url,
         )
+    except InvalidRedirectURLError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

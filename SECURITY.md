@@ -1,21 +1,12 @@
 # Security Policy
 
-## Supported Versions
+## Reporting Vulnerabilities
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Please report security issues privately (e.g. via maintainer contact) rather than public issues.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Known Limitations
 
-## Reporting a Vulnerability
+### python-ecdsa (transitive via python-jose)
 
-Use this section to tell people how to report a vulnerability.
-
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+- **CVE-2024-23342** (Minerva timing attack on P-256): python-ecdsa maintainers do not plan a fix; they recommend using `pyca/cryptography` instead.
+- **Mitigation plan**: Migrate from python-jose to PyJWT (which uses cryptography). JWT is currently used for auth tokens (HS256).

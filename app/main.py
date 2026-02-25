@@ -232,7 +232,9 @@ def _validate_cors_origins_env(is_railway: bool, errors: list[str], warnings: li
 
 def _append_resend_startup_diagnostics(warnings: list[str]) -> None:
     resend_diagnostics, resend_warnings = get_resend_startup_diagnostics()
-    logger.info("Resend diagnostics at startup: %s", resend_diagnostics)
+    # Log only non-sensitive summary (no API keys, no template IDs)
+    configured = "resend_configured=True" in resend_diagnostics
+    logger.info("Resend at startup: configured=%s", configured)
     warnings.extend(resend_warnings)
 
 
@@ -251,10 +253,8 @@ def _append_s3_startup_diagnostics(warnings: list[str]) -> None:
             ("secret_key", has_secret),
         ] if not present
     ]
-    logger.info(
-        "S3 diagnostics at startup: configured=%s, endpoint=%s, bucket=%s, region=%s, missing=%s",
-        configured, endpoint or "<not set>", bucket or "<not set>", region, ", ".join(missing) or "<none>",
-    )
+    # Log only non-sensitive summary (no endpoint/bucket/region values - may contain credentials)
+    logger.info("S3 at startup: configured=%s, missing=%s", configured, ", ".join(missing) or "none")
     if not configured:
         warnings.append(
             f"S3/storage not fully configured (missing: {', '.join(missing)}); "
@@ -274,7 +274,8 @@ def _validate_required_env_for_runtime() -> None:
     _append_s3_startup_diagnostics(warnings)
 
     if warnings:
-        logger.warning("Startup environment warnings: %s", " | ".join(warnings))
+        # Log count only; full warning text may contain URLs/credentials
+        logger.warning("Startup environment: %d warning(s)", len(warnings))
 
     if errors:
         raise RuntimeError("Startup environment validation failed: " + " | ".join(errors))

@@ -384,6 +384,28 @@ def test_create_order_uses_gateway_default_urls(client, test_asset, auth_headers
         assert "order_id=" in call_kwargs["success_url"]
 
 
+def test_create_order_invalid_gateway_default_url_returns_400(
+    client, test_asset, auth_headers, monkeypatch
+):
+    """Invalid redirect URL from gateway defaults returns 400 (client error), not 503."""
+    monkeypatch.setenv("STRIPE_SUCCESS_URL", "javascript:alert(1)")
+    monkeypatch.setenv("STRIPE_CANCEL_URL", "http://localhost:3000/cancel")
+
+    with patch("app.services.stripe_service.stripe.checkout.Session.create"):
+        response = client.post(
+            "/api/orders",
+            json={
+                "asset_id": test_asset.id,
+                "fraction_count": 1000,
+                "payment_method": "stripe",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "URL" in response.json()["detail"]
+
+
 def test_create_order_invalid_custom_return_url(client, test_asset, auth_headers):
     """Reject non-http(s) custom return_url values."""
     response = client.post(

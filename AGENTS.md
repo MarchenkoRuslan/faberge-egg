@@ -4,6 +4,26 @@
 
 Move fast with minimal codebase scanning. Start from known entrypoints, then expand only when needed.
 
+## Code-First Discipline
+
+- **Read before write.** Before changing code, read the relevant files fully. Understand existing patterns, naming, error handling, and structure.
+- **Build on what exists.** Reuse existing utilities, schemas, and conventions. Do not introduce new patterns where project patterns already exist.
+- **Preserve consistency.** Match indentation, docstrings style, import order, and error handling of surrounding code.
+- **Minimal diff.** Change only what is necessary. Avoid refactoring unrelated code unless explicitly requested.
+
+## Documentation & Libraries
+
+- **Check docs for external APIs.** For FastAPI, SQLAlchemy, Stripe, Pydantic, etc., use Context7 MCP to fetch up-to-date documentation. Do not guess API signatures or behavior.
+- **Verify before implementing.** If unsure about a library feature, fetch the docs first. Prefer official docs over assumptions.
+
+## Senior-Level Practices
+
+- **Explicit error handling.** No bare `except:` or `except Exception:` without re-raise or logging. Use specific exceptions, log context, and preserve stack traces where appropriate.
+- **Defensive coding.** Validate inputs (Pydantic, path params), handle edge cases (empty lists, None), and avoid implicit assumptions.
+- **Logging.** Use structured logging for diagnostics; avoid `print()` for production paths.
+- **Security.** Do not hardcode secrets. Validate webhook signatures (Stripe, PayKilla). Sanitize user input before DB/storage.
+- **Tests.** Add or update tests for changed behavior. Prefer existing test patterns (conftest fixtures, parametrize).
+
 ## Project Snapshot
 
 - Stack: FastAPI + SQLAlchemy + JWT auth + Stripe/PayKilla integrations.

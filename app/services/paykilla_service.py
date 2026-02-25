@@ -1,6 +1,6 @@
 # PayKilla integration - placeholder; real implementation in paykilla todo
 
-from app.services.url_utils import append_query_param
+from app.services.url_utils import append_query_param, validate_redirect_url
 
 
 def create_payment(
@@ -14,5 +14,7 @@ def create_payment(
 
     if not settings.PAYKILLA_API_KEY:
         raise ValueError("PAYKILLA_API_KEY is not set")
+    validate_redirect_url(success_url)
+    validate_redirect_url(cancel_url)
     # TODO: call PayKilla API per their docs
     return append_query_param(success_url, "order_id", order_id)
