@@ -135,10 +135,14 @@ def run_migrations() -> None:
             try:
                 config.attributes["connection"] = connection
                 command.upgrade(config, "head")
-            finally:
-                config.attributes.pop("connection", None)
+                if connection.in_transaction():
+                    connection.commit()
+            except Exception:
                 if connection.in_transaction():
                     connection.rollback()
+                raise
+            finally:
+                config.attributes.pop("connection", None)
                 try:
                     connection.execute(
                         text("SELECT pg_advisory_unlock(:lock_key)"),
