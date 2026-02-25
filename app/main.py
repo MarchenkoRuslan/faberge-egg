@@ -236,6 +236,32 @@ def _append_resend_startup_diagnostics(warnings: list[str]) -> None:
     warnings.extend(resend_warnings)
 
 
+def _append_s3_startup_diagnostics(warnings: list[str]) -> None:
+    endpoint = settings.S3_ENDPOINT
+    bucket = settings.S3_BUCKET
+    region = settings.S3_REGION
+    has_key = bool(settings.S3_ACCESS_KEY_ID)
+    has_secret = bool(settings.S3_SECRET_ACCESS_KEY)
+    configured = bool(endpoint and bucket and has_key and has_secret)
+    missing = [
+        name for name, present in [
+            ("endpoint", bool(endpoint)),
+            ("bucket", bool(bucket)),
+            ("access_key", has_key),
+            ("secret_key", has_secret),
+        ] if not present
+    ]
+    logger.info(
+        "S3 diagnostics at startup: configured=%s, endpoint=%s, bucket=%s, region=%s, missing=%s",
+        configured, endpoint or "<not set>", bucket or "<not set>", region, ", ".join(missing) or "<none>",
+    )
+    if not configured:
+        warnings.append(
+            f"S3/storage not fully configured (missing: {', '.join(missing)}); "
+            "presigned URLs will be unavailable"
+        )
+
+
 def _validate_required_env_for_runtime() -> None:
     errors = []
     warnings = []
@@ -245,6 +271,7 @@ def _validate_required_env_for_runtime() -> None:
     _validate_base_url_env(is_railway, errors, warnings)
     _validate_cors_origins_env(is_railway, errors, warnings)
     _append_resend_startup_diagnostics(warnings)
+    _append_s3_startup_diagnostics(warnings)
 
     if warnings:
         logger.warning("Startup environment warnings: %s", " | ".join(warnings))

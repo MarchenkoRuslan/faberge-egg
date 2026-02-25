@@ -157,23 +157,23 @@ class Settings:
 
     @property
     def S3_ENDPOINT(self) -> str:
-        return os.getenv("S3_ENDPOINT", os.getenv("ENDPOINT", ""))
+        return os.getenv("S3_ENDPOINT") or os.getenv("ENDPOINT") or os.getenv("AWS_ENDPOINT_URL") or ""
 
     @property
     def S3_ACCESS_KEY_ID(self) -> str:
-        return os.getenv("S3_ACCESS_KEY_ID", os.getenv("ACCESS_KEY_ID", ""))
+        return os.getenv("S3_ACCESS_KEY_ID") or os.getenv("ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID") or ""
 
     @property
     def S3_SECRET_ACCESS_KEY(self) -> str:
-        return os.getenv("S3_SECRET_ACCESS_KEY", os.getenv("SECRET_ACCESS_KEY", ""))
+        return os.getenv("S3_SECRET_ACCESS_KEY") or os.getenv("SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or ""
 
     @property
     def S3_BUCKET(self) -> str:
-        return os.getenv("S3_BUCKET", os.getenv("BUCKET", ""))
+        return os.getenv("S3_BUCKET") or os.getenv("BUCKET") or os.getenv("AWS_S3_BUCKET_NAME") or ""
 
     @property
     def S3_REGION(self) -> str:
-        return os.getenv("S3_REGION", os.getenv("REGION", "auto"))
+        return os.getenv("S3_REGION") or os.getenv("REGION") or os.getenv("AWS_DEFAULT_REGION") or "auto"
 
     @property
     def PRESIGNED_URL_EXPIRES(self) -> int:
