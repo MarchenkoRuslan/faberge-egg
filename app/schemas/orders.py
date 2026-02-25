@@ -9,7 +9,7 @@ class PaymentMethod(str, Enum):
 
 
 class OrderCreateRequest(BaseModel):
-    lot_id: int
+    asset_id: int
     fraction_count: int
     payment_method: PaymentMethod
     return_url: str | None = None
@@ -19,7 +19,7 @@ class OrderCreateRequest(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "lot_id": 1,
+                    "asset_id": 1,
                     "fraction_count": 100,
                     "payment_method": "stripe",
                     "return_url": "https://frontend.example.com/success",
@@ -39,7 +39,7 @@ class OrderCreateResponse(BaseModel):
 
 class OrderResponse(BaseModel):
     id: int
-    lot_id: int
+    asset_id: int
     fraction_count: int
     amount_eur_cents: int
     payment_method: PaymentMethod

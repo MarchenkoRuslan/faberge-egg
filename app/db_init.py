@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from app.config import settings
 from app.models.database import SessionLocal, _normalize_database_url, engine
 from app.models import (  # noqa: F401 - register models
-    Asset, AssetMedia, Lot, OneTimeToken, Order, RefreshToken, Showroom, User,
+    Asset, AssetMedia, OneTimeToken, Order, RefreshToken, Showroom, User,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,8 +55,8 @@ def _table_exists(table_name: str) -> bool:
         return inspect(connection).has_table(table_name)
 
 
-def lots_table_exists() -> bool:
-    return _table_exists("lots")
+def assets_table_exists() -> bool:
+    return _table_exists("assets")
 
 
 def run_seed(*, require_schema: bool = True) -> bool:
@@ -65,11 +65,11 @@ def run_seed(*, require_schema: bool = True) -> bool:
     When ``require_schema`` is False, missing tables are treated as a warning so a web
     process can start without running migrations in the same startup lifecycle.
     """
-    if not lots_table_exists():
-        message = "Cannot seed initial data: 'lots' table is missing. Run migrations first."
+    if not assets_table_exists():
+        message = "Cannot seed initial data: 'assets' table is missing. Run migrations first."
         if require_schema:
             raise RuntimeError(message)
-        logger.warning("Skipping DB seed on startup because lots table is missing (run migrations first)")
+        logger.warning("Skipping DB seed on startup because assets table is missing (run migrations first)")
         return False
 
     showrooms_ready = _table_exists("showrooms")
@@ -80,9 +80,8 @@ def run_seed(*, require_schema: bool = True) -> bool:
 
     db_session = SessionLocal()
     try:
-        lot_seeded = seed_first_lot(db_session)
         showroom_seeded = seed_showroom_and_asset(db_session) if showrooms_ready else False
-        return lot_seeded or showroom_seeded
+        return showroom_seeded
     finally:
         db_session.close()
 
@@ -161,42 +160,6 @@ def run_migrations() -> None:
     logger.info("Alembic migrations applied successfully")
 
 
-def seed_first_lot(db_session) -> bool:
-    """Insert the first lot if it does not exist.
-
-    Returns True when the lot is inserted, False when it already exists.
-    Handles concurrent inserts safely during parallel application startups.
-    """
-    if db_session.query(Lot).filter(Lot.slug == "faberge-egg").first():
-        logger.info("Initial lot already exists; skipping seed")
-        return False
-
-    lot = Lot(
-        name="Faberge Egg",
-        slug="faberge-egg",
-        total_fractions=100_000_000,
-        special_price_fractions_cap=3_000_000,
-        price_special_eur=0.03,
-        price_nominal_eur=0.09,
-        sold_special_fractions=0,
-        is_active=True,
-    )
-    db_session.add(lot)
-    try:
-        db_session.commit()
-        logger.info("Initial lot seeded successfully")
-        return True
-    except IntegrityError:
-        db_session.rollback()
-        if db_session.query(Lot).filter(Lot.slug == "faberge-egg").first():
-            logger.info("Initial lot was inserted by another startup instance; continuing")
-            return False
-        raise
-    except Exception:
-        db_session.rollback()
-        raise
-
-
 _INITIAL_MEDIA = [
     {
         "kind": "hero",
@@ -219,19 +182,34 @@ _INITIAL_MEDIA = [
         "media_type": "image/jpeg",
         "storage_key": "latvian-treasure/faberge-egg/gallery-2.jpg",
         "filename": "gallery-2.jpg",
-        "alt_text": "Faberge Egg side view",
+        "alt_text": "Faberge Egg close-up",
         "sort_order": 2,
+    },
+    {
+        "kind": "gallery",
+        "media_type": "image/jpeg",
+        "storage_key": "latvian-treasure/faberge-egg/gallery-3.jpg",
+        "filename": "gallery-3.jpg",
+        "alt_text": "Faberge Egg side view",
+        "sort_order": 3,
+    },
+    {
+        "kind": "gallery",
+        "media_type": "image/jpeg",
+        "storage_key": "latvian-treasure/faberge-egg/gallery-4.jpg",
+        "filename": "gallery-4.jpg",
+        "alt_text": "Faberge Egg alternate angle",
+        "sort_order": 4,
     },
 ]
 
 
 def seed_showroom_and_asset(db_session) -> bool:
-    """Create the initial showroom, asset, media records and link the lot.
+    """Create the initial showroom, asset with commerce fields, and media records.
 
     Idempotent: skips when the showroom already exists.
     """
     if db_session.query(Showroom).filter(Showroom.slug == "latvian-treasure").first():
-        _ensure_lot_asset_link(db_session)
         logger.info("Showroom 'latvian-treasure' already exists; skipping seed")
         return False
 
@@ -243,6 +221,10 @@ def seed_showroom_and_asset(db_session) -> bool:
             "Discover the Latvian Faberge Treasure — an exclusive collection "
             "of imperial Faberge eggs available for fractional ownership."
         ),
+        meta={
+            "image_key": "latvian-treasure/showroom-image.jpg",
+            "background_image_key": "latvian-treasure/showroom-background.jpg",
+        },
         status="active",
         sort_order=0,
     )
@@ -277,6 +259,12 @@ def seed_showroom_and_asset(db_session) -> bool:
         },
         status="active",
         sort_order=0,
+        total_fractions=100_000_000,
+        special_price_fractions_cap=3_000_000,
+        price_special_eur=0.03,
+        price_nominal_eur=0.09,
+        sold_special_fractions=0,
+        is_active=True,
     )
     db_session.add(asset)
     db_session.flush()
@@ -296,19 +284,4 @@ def seed_showroom_and_asset(db_session) -> bool:
         db_session.rollback()
         raise
 
-    _ensure_lot_asset_link(db_session)
     return True
-
-
-def _ensure_lot_asset_link(db_session) -> None:
-    """Link the 'faberge-egg' lot to the 'faberge-egg' asset if not already linked."""
-    lot = db_session.query(Lot).filter(Lot.slug == "faberge-egg").first()
-    asset = db_session.query(Asset).filter(Asset.slug == "faberge-egg").first()
-    if lot and asset and lot.asset_id != asset.id:
-        lot.asset_id = asset.id
-        try:
-            db_session.commit()
-            logger.info("Linked lot '%s' to asset '%s'", lot.slug, asset.slug)
-        except Exception:
-            db_session.rollback()
-            raise

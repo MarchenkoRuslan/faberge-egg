@@ -1,4 +1,4 @@
-﻿from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ def test_stripe_create_checkout_session_success():
             order_id=1,
             amount_eur_cents=3000,
             fraction_count=1000,
-            lot_name="Test Lot",
+            asset_name="Test Asset",
             success_url="https://example.com/success",
             cancel_url="https://example.com/cancel",
         )
@@ -45,7 +45,7 @@ def test_stripe_create_checkout_session_no_secret():
                 order_id=1,
                 amount_eur_cents=3000,
                 fraction_count=1000,
-                lot_name="Test Lot",
+                asset_name="Test Asset",
                 success_url="https://example.com/success",
                 cancel_url="https://example.com/cancel",
             )
@@ -66,7 +66,7 @@ def test_stripe_create_checkout_session_parameters():
             order_id=42,
             amount_eur_cents=5000,
             fraction_count=2000,
-            lot_name="Special Lot",
+            asset_name="Special Asset",
             success_url="https://custom.com/success",
             cancel_url="https://custom.com/cancel",
         )
@@ -78,9 +78,9 @@ def test_stripe_create_checkout_session_parameters():
         line_item = call_kwargs["line_items"][0]
         assert line_item["price_data"]["currency"] == "eur"
         assert line_item["price_data"]["unit_amount"] == 5000
-        assert "Special Lot" in line_item["price_data"]["product_data"]["name"]
+        assert "Special Asset" in line_item["price_data"]["product_data"]["name"]
         assert "2000" in line_item["price_data"]["product_data"]["name"]
-        assert line_item["price_data"]["product_data"]["name"] == "Special Lot - 2000 fraction(s)"
+        assert line_item["price_data"]["product_data"]["name"] == "Special Asset - 2000 fraction(s)"
 
         # Check URLs
         assert "order_id=42" in call_kwargs["success_url"]
@@ -102,7 +102,7 @@ def test_stripe_create_checkout_session_preserves_existing_query_params():
             order_id=77,
             amount_eur_cents=5000,
             fraction_count=100,
-            lot_name="Special Lot",
+            asset_name="Special Asset",
             success_url="https://custom.com/success?source=app",
             cancel_url="https://custom.com/cancel",
         )

@@ -1,9 +1,9 @@
-from app.schemas.lots import LotListResponse, LotDetailResponse
+from app.schemas.showrooms import AssetListResponse, AssetDetailResponse
 from app.schemas.orders import OrderCreateRequest, OrderCreateResponse, OrderResponse, OrderStatusResponse
 
 __all__ = [
-    "LotListResponse",
-    "LotDetailResponse",
+    "AssetListResponse",
+    "AssetDetailResponse",
     "OrderCreateRequest",
     "OrderCreateResponse",
     "OrderResponse",

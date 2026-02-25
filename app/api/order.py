@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import get_current_user
-from app.models import Lot, Order, User, get_db
+from app.models import Asset, Order, User, get_db
 from app.schemas.orders import (
     OrderCreateRequest,
     OrderCreateResponse,
@@ -40,19 +40,19 @@ def _get_payment_gateway_or_raise(payment_method: str) -> PaymentGateway:
     return gateway
 
 
-def _get_active_lot_or_raise(db: Session, lot_id: int) -> Lot:
-    lot = db.query(Lot).filter(Lot.id == lot_id, Lot.is_active.is_(True)).first()
-    if not lot:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot not found")
-    return lot
+def _get_active_asset_or_raise(db: Session, asset_id: int) -> Asset:
+    asset = db.query(Asset).filter(Asset.id == asset_id, Asset.is_active.is_(True), Asset.status == "active").first()
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    return asset
 
 
-def _remaining_special_fractions(lot: Lot) -> int:
-    return max(0, lot.special_price_fractions_cap - lot.sold_special_fractions)
+def _remaining_special_fractions(asset: Asset) -> int:
+    return max(0, asset.special_price_fractions_cap - asset.sold_special_fractions)
 
 
-def _validate_fraction_count_or_raise(fraction_count: int, lot: Lot) -> None:
-    remaining = _remaining_special_fractions(lot)
+def _validate_fraction_count_or_raise(fraction_count: int, asset: Asset) -> None:
+    remaining = _remaining_special_fractions(asset)
     min_f = settings.MIN_FRACTIONS
     if fraction_count < min_f:
         raise HTTPException(
@@ -76,9 +76,8 @@ def _resolve_checkout_urls(body: OrderCreateRequest, gateway: PaymentGateway) ->
     return success_url, cancel_url
 
 
-def _calculate_amount_eur_cents(lot: Lot, fraction_count: int) -> int:
-    # Use Decimal for precise conversion to cents.
-    price_special_decimal = Decimal(str(lot.price_special_eur))
+def _calculate_amount_eur_cents(asset: Asset, fraction_count: int) -> int:
+    price_special_decimal = Decimal(str(asset.price_special_eur))
     return int(price_special_decimal * Decimal("100") * Decimal(str(fraction_count)))
 
 
@@ -86,14 +85,14 @@ def _create_pending_order(
     db: Session,
     *,
     current_user: User,
-    lot: Lot,
+    asset: Asset,
     fraction_count: int,
     amount_eur_cents: int,
     payment_method: str,
 ) -> Order:
     order = Order(
         user_id=current_user.id,
-        lot_id=lot.id,
+        asset_id=asset.id,
         fraction_count=fraction_count,
         amount_eur_cents=amount_eur_cents,
         payment_method=payment_method,
@@ -109,7 +108,7 @@ def _create_checkout_or_raise(
     *,
     gateway: PaymentGateway,
     order: Order,
-    lot: Lot,
+    asset: Asset,
     amount_eur_cents: int,
     success_url: str,
     cancel_url: str,
@@ -119,7 +118,7 @@ def _create_checkout_or_raise(
             order_id=order.id,
             amount_eur_cents=amount_eur_cents,
             fraction_count=order.fraction_count,
-            lot_name=lot.name,
+            asset_name=asset.name,
             success_url=success_url,
             cancel_url=cancel_url,
         )
@@ -169,18 +168,18 @@ def create_order(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Create an order for the given lot and fraction count.
+    Create an order for the given asset and fraction count.
     Validates min/max fractions. Returns checkout_url for redirect (Stripe or PayKilla).
     """
     gateway = _get_payment_gateway_or_raise(body.payment_method)
-    lot = _get_active_lot_or_raise(db, body.lot_id)
-    _validate_fraction_count_or_raise(body.fraction_count, lot)
+    asset = _get_active_asset_or_raise(db, body.asset_id)
+    _validate_fraction_count_or_raise(body.fraction_count, asset)
     success_url, cancel_url = _resolve_checkout_urls(body, gateway)
-    amount_eur_cents = _calculate_amount_eur_cents(lot, body.fraction_count)
+    amount_eur_cents = _calculate_amount_eur_cents(asset, body.fraction_count)
     order = _create_pending_order(
         db,
         current_user=current_user,
-        lot=lot,
+        asset=asset,
         fraction_count=body.fraction_count,
         amount_eur_cents=amount_eur_cents,
         payment_method=body.payment_method,
@@ -189,7 +188,7 @@ def create_order(
         db,
         gateway=gateway,
         order=order,
-        lot=lot,
+        asset=asset,
         amount_eur_cents=amount_eur_cents,
         success_url=success_url,
         cancel_url=cancel_url,
@@ -219,7 +218,7 @@ def my_orders(
     return [
         OrderResponse(
             id=o.id,
-            lot_id=o.lot_id,
+            asset_id=o.asset_id,
             fraction_count=o.fraction_count,
             amount_eur_cents=o.amount_eur_cents,
             payment_method=o.payment_method,

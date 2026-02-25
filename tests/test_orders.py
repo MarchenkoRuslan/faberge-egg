@@ -1,11 +1,11 @@
-﻿from unittest.mock import patch
+from unittest.mock import patch
 
 from fastapi import status
 
 from app.models.order import Order
 
 
-def test_create_order_stripe_success(client, test_user, test_lot, auth_headers, db):
+def test_create_order_stripe_success(client, test_user, test_asset, auth_headers, db):
     """Test successful order creation with Stripe."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
@@ -14,7 +14,7 @@ def test_create_order_stripe_success(client, test_user, test_lot, auth_headers, 
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
             },
@@ -28,17 +28,16 @@ def test_create_order_stripe_success(client, test_user, test_lot, auth_headers, 
         assert data["session_id"] == "cs_test_123"
         assert data["payment_method"] == "stripe"
 
-        # Verify order was created
         order = db.query(Order).filter(Order.id == data["order_id"]).first()
         assert order is not None
         assert order.user_id == test_user.id
-        assert order.lot_id == test_lot.id
+        assert order.asset_id == test_asset.id
         assert order.fraction_count == 1000
         assert order.payment_method == "stripe"
         assert order.status == "pending"
 
 
-def test_create_order_paykilla_success(client, test_user, test_lot, auth_headers):
+def test_create_order_paykilla_success(client, test_user, test_asset, auth_headers):
     """Test successful order creation with PayKilla."""
     with patch("app.services.paykilla_service.create_payment") as mock_paykilla:
         mock_paykilla.return_value = "https://paykilla.com/checkout?order_id=1"
@@ -46,7 +45,7 @@ def test_create_order_paykilla_success(client, test_user, test_lot, auth_headers
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 500,
                 "payment_method": "paykilla",
             },
@@ -60,12 +59,12 @@ def test_create_order_paykilla_success(client, test_user, test_lot, auth_headers
         assert data["payment_method"] == "paykilla"
 
 
-def test_create_order_min_fractions_validation(client, test_lot, auth_headers):
+def test_create_order_min_fractions_validation(client, test_asset, auth_headers):
     """Test validation of minimum fractions."""
     response = client.post(
         "/api/orders",
         json={
-            "lot_id": test_lot.id,
+            "asset_id": test_asset.id,
             "fraction_count": 0,
             "payment_method": "stripe",
         },
@@ -76,13 +75,13 @@ def test_create_order_min_fractions_validation(client, test_lot, auth_headers):
     assert "minimum" in response.json()["detail"].lower()
 
 
-def test_create_order_max_fractions_validation(client, test_lot, auth_headers):
+def test_create_order_max_fractions_validation(client, test_asset, auth_headers):
     """Test validation of maximum fractions (remaining)."""
     response = client.post(
         "/api/orders",
         json={
-            "lot_id": test_lot.id,
-            "fraction_count": 5_000_000,  # More than available
+            "asset_id": test_asset.id,
+            "fraction_count": 5_000_000,
             "payment_method": "stripe",
         },
         headers=auth_headers,
@@ -92,8 +91,8 @@ def test_create_order_max_fractions_validation(client, test_lot, auth_headers):
     assert "available" in response.json()["detail"].lower() or "only" in response.json()["detail"].lower()
 
 
-def test_create_order_lot_not_found(client, auth_headers):
-    """Test order creation with non-existent lot."""
+def test_create_order_asset_not_found(client, auth_headers):
+    """Test order creation with non-existent asset."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
@@ -101,7 +100,7 @@ def test_create_order_lot_not_found(client, auth_headers):
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": 99999,
+                "asset_id": 99999,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
             },
@@ -112,12 +111,12 @@ def test_create_order_lot_not_found(client, auth_headers):
         assert "not found" in response.json()["detail"].lower()
 
 
-def test_create_order_inactive_lot(client, test_lot_inactive, auth_headers):
-    """Test order creation with inactive lot."""
+def test_create_order_inactive_asset(client, test_asset_inactive, auth_headers):
+    """Test order creation with inactive asset."""
     response = client.post(
         "/api/orders",
         json={
-            "lot_id": test_lot_inactive.id,
+            "asset_id": test_asset_inactive.id,
             "fraction_count": 1000,
             "payment_method": "stripe",
         },
@@ -127,12 +126,12 @@ def test_create_order_inactive_lot(client, test_lot_inactive, auth_headers):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_create_order_unauthorized(client, test_lot):
+def test_create_order_unauthorized(client, test_asset):
     """Test order creation without authentication."""
     response = client.post(
         "/api/orders",
         json={
-            "lot_id": test_lot.id,
+            "asset_id": test_asset.id,
             "fraction_count": 1000,
             "payment_method": "stripe",
         },
@@ -141,7 +140,7 @@ def test_create_order_unauthorized(client, test_lot):
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_create_order_price_calculation(client, test_lot, auth_headers, db):
+def test_create_order_price_calculation(client, test_asset, auth_headers, db):
     """Test price calculation with Decimal precision."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
@@ -151,7 +150,7 @@ def test_create_order_price_calculation(client, test_lot, auth_headers, db):
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": fraction_count,
                 "payment_method": "stripe",
             },
@@ -160,13 +159,12 @@ def test_create_order_price_calculation(client, test_lot, auth_headers, db):
 
         assert response.status_code == status.HTTP_200_OK
 
-        # Price should be 0.03 * 100 * 1000 = 3000 cents
         expected_cents = int(0.03 * 100 * 1000)
         order = db.query(Order).filter(Order.id == response.json()["order_id"]).first()
         assert order.amount_eur_cents == expected_cents
 
 
-def test_create_order_custom_urls(client, test_lot, auth_headers):
+def test_create_order_custom_urls(client, test_asset, auth_headers):
     """Test order creation with custom return_url and cancel_url."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
@@ -175,7 +173,7 @@ def test_create_order_custom_urls(client, test_lot, auth_headers):
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
                 "return_url": "https://custom.com/success",
@@ -185,13 +183,12 @@ def test_create_order_custom_urls(client, test_lot, auth_headers):
         )
 
         assert response.status_code == status.HTTP_200_OK
-        # Verify Stripe was called with custom URLs
         call_args = mock_stripe.call_args
         assert "custom.com/success" in call_args[1]["success_url"]
         assert "custom.com/cancel" in call_args[1]["cancel_url"]
 
 
-def test_create_order_stripe_error(client, test_lot, auth_headers):
+def test_create_order_stripe_error(client, test_asset, auth_headers):
     """Test order creation when Stripe service fails."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.side_effect = ValueError("Stripe API error")
@@ -199,7 +196,7 @@ def test_create_order_stripe_error(client, test_lot, auth_headers):
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
             },
@@ -209,12 +206,12 @@ def test_create_order_stripe_error(client, test_lot, auth_headers):
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
-def test_create_order_unsupported_payment_method(client, test_lot, auth_headers):
+def test_create_order_unsupported_payment_method(client, test_asset, auth_headers):
     """Test order creation with unsupported payment method."""
     response = client.post(
         "/api/orders",
         json={
-            "lot_id": test_lot.id,
+            "asset_id": test_asset.id,
             "fraction_count": 1000,
             "payment_method": "bitcoin",
         },
@@ -225,12 +222,11 @@ def test_create_order_unsupported_payment_method(client, test_lot, auth_headers)
     assert any(err.get("type") in {"literal_error", "enum"} for err in response.json()["detail"])
 
 
-def test_get_my_orders_success(client, test_user, test_lot, auth_headers, db):
+def test_get_my_orders_success(client, test_user, test_asset, auth_headers, db):
     """Test getting list of user's orders."""
-    # Create some orders
     order1 = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
@@ -238,7 +234,7 @@ def test_get_my_orders_success(client, test_user, test_lot, auth_headers, db):
     )
     order2 = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
@@ -254,26 +250,23 @@ def test_get_my_orders_success(client, test_user, test_lot, auth_headers, db):
     assert isinstance(data, list)
     assert len(data) >= 2
 
-    # Check that orders belong to the user
     for order in data:
-        assert order["lot_id"] == test_lot.id
+        assert order["asset_id"] == test_asset.id
 
 
-def test_get_my_orders_only_current_user(client, test_user, test_user2, test_lot, auth_headers, db):
+def test_get_my_orders_only_current_user(client, test_user, test_user2, test_asset, auth_headers, db):
     """Test that only current user's orders are returned."""
-    # Create order for test_user
     order1 = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
         status="pending",
     )
-    # Create order for test_user2
     order2 = Order(
         user_id=test_user2.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="stripe",
@@ -287,7 +280,6 @@ def test_get_my_orders_only_current_user(client, test_user, test_user2, test_lot
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
-    # Should only return orders for test_user
     user_order_ids = [o["id"] for o in data if o["id"] == order1.id]
     assert len(user_order_ids) >= 1
     assert order2.id not in [o["id"] for o in data]
@@ -299,11 +291,11 @@ def test_get_my_orders_unauthorized(client):
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_get_order_status_success(client, test_user, test_lot, auth_headers, db):
+def test_get_order_status_success(client, test_user, test_asset, auth_headers, db):
     """Test getting order status."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
@@ -327,11 +319,11 @@ def test_get_order_status_not_found(client, auth_headers):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_get_order_status_other_user(client, test_user2, test_lot, auth_headers, db):
+def test_get_order_status_other_user(client, test_user2, test_asset, auth_headers, db):
     """Test getting status of another user's order."""
     order = Order(
         user_id=test_user2.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
@@ -344,11 +336,11 @@ def test_get_order_status_other_user(client, test_user2, test_lot, auth_headers,
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_get_order_status_unauthorized(client, test_user, test_lot, db):
+def test_get_order_status_unauthorized(client, test_user, test_asset, db):
     """Test getting order status without authentication."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
@@ -371,7 +363,7 @@ def test_get_payment_methods(client):
     assert set(data["enabled_methods"]).issubset({"stripe", "paykilla"})
 
 
-def test_create_order_uses_gateway_default_urls(client, test_lot, auth_headers):
+def test_create_order_uses_gateway_default_urls(client, test_asset, auth_headers):
     """Order creation uses gateway defaults when custom URLs are absent."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
@@ -380,7 +372,7 @@ def test_create_order_uses_gateway_default_urls(client, test_lot, auth_headers):
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 100,
                 "payment_method": "stripe",
             },
@@ -392,12 +384,12 @@ def test_create_order_uses_gateway_default_urls(client, test_lot, auth_headers):
         assert "order_id=" in call_kwargs["success_url"]
 
 
-def test_create_order_invalid_custom_return_url(client, test_lot, auth_headers):
+def test_create_order_invalid_custom_return_url(client, test_asset, auth_headers):
     """Reject non-http(s) custom return_url values."""
     response = client.post(
         "/api/orders",
         json={
-            "lot_id": test_lot.id,
+            "asset_id": test_asset.id,
             "fraction_count": 1000,
             "payment_method": "stripe",
             "return_url": "javascript:alert(1)",
@@ -409,7 +401,7 @@ def test_create_order_invalid_custom_return_url(client, test_lot, auth_headers):
     assert "return_url" in response.json()["detail"]
 
 
-def test_create_order_stripe_error_rolls_back_pending_order(client, test_lot, auth_headers, db):
+def test_create_order_stripe_error_rolls_back_pending_order(client, test_asset, auth_headers, db):
     """Order row should not persist if checkout creation fails."""
     pending_before = db.query(Order).count()
 
@@ -419,7 +411,7 @@ def test_create_order_stripe_error_rolls_back_pending_order(client, test_lot, au
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
             },
@@ -431,7 +423,7 @@ def test_create_order_stripe_error_rolls_back_pending_order(client, test_lot, au
     assert pending_after == pending_before
 
 
-def test_create_order_empty_checkout_url_returns_500_and_rolls_back(client, test_lot, auth_headers, db):
+def test_create_order_empty_checkout_url_returns_500_and_rolls_back(client, test_asset, auth_headers, db):
     """Empty checkout URL must be treated as provider failure."""
     pending_before = db.query(Order).count()
 
@@ -442,7 +434,7 @@ def test_create_order_empty_checkout_url_returns_500_and_rolls_back(client, test
         response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
             },

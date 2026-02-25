@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import hmac
 import json
 from unittest.mock import patch
@@ -9,12 +9,11 @@ from fastapi import status
 from app.models.order import Order
 
 
-def test_stripe_webhook_success(client, test_user, test_lot, db):
+def test_stripe_webhook_success(client, test_user, test_asset, db):
     """Test successful Stripe webhook processing."""
-    # Create an order
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
@@ -24,7 +23,6 @@ def test_stripe_webhook_success(client, test_user, test_lot, db):
     db.commit()
     order_id = order.id
 
-    # Create Stripe event payload
     event_data = {
         "id": "evt_test",
         "type": "checkout.session.completed",
@@ -48,29 +46,27 @@ def test_stripe_webhook_success(client, test_user, test_lot, db):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["received"] is True
 
-        # Verify order was updated
         db.refresh(order)
         assert order.status == "paid"
         assert order.external_payment_id == "cs_test_123"
 
-        # Verify lot fractions were incremented
-        db.refresh(test_lot)
-        assert test_lot.sold_special_fractions == 1000
+        db.refresh(test_asset)
+        assert test_asset.sold_special_fractions == 1000
 
 
-def test_stripe_webhook_idempotent(client, test_user, test_lot, db):
+def test_stripe_webhook_idempotent(client, test_user, test_asset, db):
     """Test that Stripe webhook is idempotent (no double spend)."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1000,
         amount_eur_cents=3000,
         payment_method="stripe",
-        status="paid",  # Already paid
+        status="paid",
     )
     db.add(order)
     db.commit()
-    initial_sold = test_lot.sold_special_fractions
+    initial_sold = test_asset.sold_special_fractions
     order_id = order.id
 
     event_data = {
@@ -95,9 +91,8 @@ def test_stripe_webhook_idempotent(client, test_user, test_lot, db):
 
         assert response.status_code == status.HTTP_200_OK
 
-        # Verify fractions were not incremented again
-        db.refresh(test_lot)
-        assert test_lot.sold_special_fractions == initial_sold
+        db.refresh(test_asset)
+        assert test_asset.sold_special_fractions == initial_sold
 
 
 def test_stripe_webhook_invalid_signature(client):
@@ -218,10 +213,10 @@ def test_stripe_webhook_no_secret(client):
             os.environ["STRIPE_WEBHOOK_SECRET"] = original_secret
 
 
-def test_stripe_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_lot, db):
+def test_stripe_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_asset, db):
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="stripe",
@@ -252,16 +247,16 @@ def test_stripe_webhook_amount_mismatch_keeps_order_pending(client, test_user, t
 
     assert response.status_code == status.HTTP_200_OK
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == 0
+    assert test_asset.sold_special_fractions == 0
 
 
-def test_stripe_webhook_currency_mismatch_keeps_order_pending(client, test_user, test_lot, db):
+def test_stripe_webhook_currency_mismatch_keeps_order_pending(client, test_user, test_asset, db):
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="stripe",
@@ -293,16 +288,16 @@ def test_stripe_webhook_currency_mismatch_keeps_order_pending(client, test_user,
 
     assert response.status_code == status.HTTP_200_OK
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == 0
+    assert test_asset.sold_special_fractions == 0
 
 
-def test_stripe_webhook_wrong_payment_method_keeps_order_pending(client, test_user, test_lot, db):
+def test_stripe_webhook_wrong_payment_method_keeps_order_pending(client, test_user, test_asset, db):
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
@@ -333,19 +328,19 @@ def test_stripe_webhook_wrong_payment_method_keeps_order_pending(client, test_us
 
     assert response.status_code == status.HTTP_200_OK
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == 0
+    assert test_asset.sold_special_fractions == 0
 
 
-def test_stripe_webhook_capacity_exceeded_keeps_order_pending(client, test_user, test_lot, db):
-    test_lot.sold_special_fractions = test_lot.special_price_fractions_cap
+def test_stripe_webhook_capacity_exceeded_keeps_order_pending(client, test_user, test_asset, db):
+    test_asset.sold_special_fractions = test_asset.special_price_fractions_cap
     db.commit()
 
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1,
         amount_eur_cents=3,
         payment_method="stripe",
@@ -376,10 +371,10 @@ def test_stripe_webhook_capacity_exceeded_keeps_order_pending(client, test_user,
 
     assert response.status_code == status.HTTP_200_OK
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == test_lot.special_price_fractions_cap
+    assert test_asset.sold_special_fractions == test_asset.special_price_fractions_cap
 
 
 def _paykilla_post(client, payload: dict, *, include_signature: bool = True, secret: str = "pk_whsec_test_mock"):
@@ -391,11 +386,11 @@ def _paykilla_post(client, payload: dict, *, include_signature: bool = True, sec
     return client.post("/webhooks/paykilla", content=raw_body, headers=headers)
 
 
-def test_paykilla_webhook_success(client, test_user, test_lot, db):
+def test_paykilla_webhook_success(client, test_user, test_asset, db):
     """Test successful PayKilla webhook processing."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
@@ -420,15 +415,15 @@ def test_paykilla_webhook_success(client, test_user, test_lot, db):
     assert order.status == "paid"
     assert order.external_payment_id == "tx_paykilla_123"
 
-    db.refresh(test_lot)
-    assert test_lot.sold_special_fractions == 500
+    db.refresh(test_asset)
+    assert test_asset.sold_special_fractions == 500
 
 
-def test_paykilla_webhook_idempotent(client, test_user, test_lot, db):
+def test_paykilla_webhook_idempotent(client, test_user, test_asset, db):
     """Test that PayKilla webhook is idempotent."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
@@ -436,7 +431,7 @@ def test_paykilla_webhook_idempotent(client, test_user, test_lot, db):
     )
     db.add(order)
     db.commit()
-    initial_sold = test_lot.sold_special_fractions
+    initial_sold = test_asset.sold_special_fractions
     order_id = order.id
 
     response = _paykilla_post(
@@ -449,8 +444,8 @@ def test_paykilla_webhook_idempotent(client, test_user, test_lot, db):
 
     assert response.status_code == status.HTTP_200_OK
 
-    db.refresh(test_lot)
-    assert test_lot.sold_special_fractions == initial_sold
+    db.refresh(test_asset)
+    assert test_asset.sold_special_fractions == initial_sold
 
 
 def test_paykilla_webhook_missing_signature(client):
@@ -498,11 +493,11 @@ def test_paykilla_webhook_order_not_found(client):
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_paykilla_webhook_wrong_payment_method(client, test_user, test_lot, db):
+def test_paykilla_webhook_wrong_payment_method(client, test_user, test_asset, db):
     """Test PayKilla webhook with order that has different payment method."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="stripe",
@@ -520,11 +515,11 @@ def test_paykilla_webhook_wrong_payment_method(client, test_user, test_lot, db):
     assert order.status == "pending"
 
 
-def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_lot, db):
+def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_asset, db):
     """Test that PayKilla webhook does not mark order as paid for failed statuses."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
@@ -546,17 +541,17 @@ def test_paykilla_webhook_ignores_non_success_status(client, test_user, test_lot
     assert response.json()["received"] is True
 
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == 0
+    assert test_asset.sold_special_fractions == 0
 
 
-def test_paykilla_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_lot, db):
+def test_paykilla_webhook_amount_mismatch_keeps_order_pending(client, test_user, test_asset, db):
     """PayKilla amount mismatch must not mark order paid."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
@@ -576,20 +571,20 @@ def test_paykilla_webhook_amount_mismatch_keeps_order_pending(client, test_user,
 
     assert response.status_code == status.HTTP_200_OK
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == 0
+    assert test_asset.sold_special_fractions == 0
 
 
-def test_paykilla_webhook_capacity_exceeded_keeps_order_pending(client, test_user, test_lot, db):
-    """When lot cap is exhausted, webhook must not move order to paid."""
-    test_lot.sold_special_fractions = test_lot.special_price_fractions_cap
+def test_paykilla_webhook_capacity_exceeded_keeps_order_pending(client, test_user, test_asset, db):
+    """When asset cap is exhausted, webhook must not move order to paid."""
+    test_asset.sold_special_fractions = test_asset.special_price_fractions_cap
     db.commit()
 
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=1,
         amount_eur_cents=3,
         payment_method="paykilla",
@@ -608,10 +603,10 @@ def test_paykilla_webhook_capacity_exceeded_keeps_order_pending(client, test_use
 
     assert response.status_code == status.HTTP_200_OK
     db.refresh(order)
-    db.refresh(test_lot)
+    db.refresh(test_asset)
     assert order.status == "pending"
     assert order.external_payment_id is None
-    assert test_lot.sold_special_fractions == test_lot.special_price_fractions_cap
+    assert test_asset.sold_special_fractions == test_asset.special_price_fractions_cap
 
 
 def test_stripe_webhook_non_positive_order_id(client):
@@ -634,11 +629,11 @@ def test_stripe_webhook_non_positive_order_id(client):
     assert response.json()["received"] is True
 
 
-def test_paykilla_webhook_non_positive_amount_returns_400(client, test_user, test_lot, db):
+def test_paykilla_webhook_non_positive_amount_returns_400(client, test_user, test_asset, db):
     """amount_eur_cents must be a positive integer when provided."""
     order = Order(
         user_id=test_user.id,
-        lot_id=test_lot.id,
+        asset_id=test_asset.id,
         fraction_count=500,
         amount_eur_cents=1500,
         payment_method="paykilla",
