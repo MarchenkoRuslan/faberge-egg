@@ -88,7 +88,7 @@ def _validate_stripe_currency(session: dict, order_id: int) -> bool:
 
 def _log_stripe_settlement_result(result: PaymentSettlementResult) -> None:
     if result.status == PaymentSettlementStatus.PAID:
-        logger.info("Order %s marked as paid, lot %s updated", result.order_id, result.lot_id)
+        logger.info("Order %s marked as paid, asset %s updated", result.order_id, result.asset_id)
         return
     if result.status == PaymentSettlementStatus.ALREADY_PAID:
         logger.info("Order %s already paid, skipping", result.order_id)
@@ -111,8 +111,8 @@ def _log_stripe_settlement_result(result: PaymentSettlementResult) -> None:
             result.received_amount_cents,
         )
         return
-    if result.status == PaymentSettlementStatus.LOT_NOT_FOUND:
-        logger.error("Lot %s not found for order %s", result.lot_id, result.order_id)
+    if result.status == PaymentSettlementStatus.ASSET_NOT_FOUND:
+        logger.error("Asset %s not found for order %s", result.asset_id, result.order_id)
         return
     if result.status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
         logger.warning(
@@ -162,7 +162,7 @@ async def stripe_webhook(
 ):
     """
     Stripe sends events here. We handle checkout.session.completed:
-    mark order as paid and increment lot sold_special_fractions.
+    mark order as paid and increment asset sold_special_fractions.
     Idempotent: if order already paid, no double spend.
     """
     payload = await request.body()

@@ -5,7 +5,6 @@ from fastapi import status
 
 from app.models.asset import Asset
 from app.models.asset_media import AssetMedia
-from app.models.lot import Lot
 from app.models.showroom import Showroom
 
 
@@ -36,6 +35,12 @@ def _create_asset(db, showroom, slug="test-asset", name="Test Asset", **kwargs):
         meta={"origin": "Test"},
         status="active",
         sort_order=0,
+        total_fractions=100_000_000,
+        special_price_fractions_cap=3_000_000,
+        price_special_eur=Decimal("0.03"),
+        price_nominal_eur=Decimal("0.09"),
+        sold_special_fractions=0,
+        is_active=True,
     )
     defaults.update(kwargs)
     asset = Asset(**defaults)
@@ -61,24 +66,6 @@ def _create_media(db, asset, kind="hero", storage_key="test/hero.jpg", **kwargs)
     db.commit()
     db.refresh(media)
     return media
-
-
-def _create_lot_for_asset(db, asset, slug="test-lot"):
-    lot = Lot(
-        asset_id=asset.id,
-        name="Test Lot",
-        slug=slug,
-        total_fractions=100_000_000,
-        special_price_fractions_cap=3_000_000,
-        price_special_eur=Decimal("0.03"),
-        price_nominal_eur=Decimal("0.09"),
-        sold_special_fractions=0,
-        is_active=True,
-    )
-    db.add(lot)
-    db.commit()
-    db.refresh(lot)
-    return lot
 
 
 # --- Showroom list ---
@@ -141,7 +128,6 @@ def test_get_showroom_with_assets(mock_presign, client, db):
     showroom = _create_showroom(db)
     asset = _create_asset(db, showroom)
     _create_media(db, asset)
-    _create_lot_for_asset(db, asset)
 
     response = client.get(f"/api/showrooms/{showroom.slug}")
     assert response.status_code == status.HTTP_200_OK
@@ -155,8 +141,8 @@ def test_get_showroom_with_assets(mock_presign, client, db):
     assert asset_data["slug"] == "test-asset"
     assert len(asset_data["media"]) == 1
     assert asset_data["media"][0]["url"] == "https://signed.example.com/img.jpg"
-    assert asset_data["lot"] is not None
-    assert asset_data["lot"]["slug"] == "test-lot"
+    assert asset_data["total_fractions"] == 100_000_000
+    assert asset_data["price_special_eur"] == "0.03"
 
 
 @patch("app.api.showrooms.get_presigned_url", return_value=None)
@@ -168,6 +154,34 @@ def test_get_showroom_media_url_none_when_s3_unavailable(mock_presign, client, d
     response = client.get(f"/api/showrooms/{showroom.slug}")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["assets"][0]["media"][0]["url"] is None
+
+
+@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+def test_showroom_image_urls_from_meta(mock_presign, client, db):
+    _create_showroom(
+        db,
+        meta={
+            "image_key": "sr/image.jpg",
+            "background_image_key": "sr/bg.jpg",
+        },
+    )
+    response = client.get("/api/showrooms")
+    item = response.json()[0]
+    assert item["image_url"] == "https://signed.example.com/img.jpg"
+    assert item["background_image_url"] == "https://signed.example.com/img.jpg"
+
+    detail = client.get(f"/api/showrooms/{item['slug']}").json()
+    assert detail["image_url"] == "https://signed.example.com/img.jpg"
+    assert detail["background_image_url"] == "https://signed.example.com/img.jpg"
+
+
+@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+def test_showroom_image_urls_none_without_meta(mock_presign, client, db):
+    _create_showroom(db)
+    response = client.get("/api/showrooms")
+    item = response.json()[0]
+    assert item["image_url"] is None
+    assert item["background_image_url"] is None
 
 
 @patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
@@ -183,13 +197,13 @@ def test_get_showroom_excludes_draft_assets(mock_presign, client, db):
 
 
 @patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
-def test_get_showroom_asset_without_lot(mock_presign, client, db):
+def test_get_showroom_asset_without_commerce(mock_presign, client, db):
     showroom = _create_showroom(db)
-    _create_asset(db, showroom)
+    _create_asset(db, showroom, total_fractions=0, is_active=True)
 
     response = client.get(f"/api/showrooms/{showroom.slug}")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["assets"][0]["lot"] is None
+    assert response.json()["assets"][0]["total_fractions"] == 0
 
 
 # --- Asset detail ---
@@ -201,7 +215,6 @@ def test_get_asset_detail(mock_presign, client, db):
     asset = _create_asset(db, showroom)
     _create_media(db, asset, kind="hero", storage_key="test/hero.jpg", sort_order=0)
     _create_media(db, asset, kind="gallery", storage_key="test/gallery.jpg", sort_order=1)
-    _create_lot_for_asset(db, asset)
 
     response = client.get(f"/api/assets/{asset.slug}")
     assert response.status_code == status.HTTP_200_OK
@@ -212,7 +225,8 @@ def test_get_asset_detail(mock_presign, client, db):
     assert len(data["media"]) == 2
     assert data["media"][0]["kind"] == "hero"
     assert data["media"][1]["kind"] == "gallery"
-    assert data["lot"]["price_special_eur"] == "0.03"
+    assert data["price_special_eur"] == "0.03"
+    assert data["total_fractions"] == 100_000_000
 
 
 def test_get_asset_not_found(client):

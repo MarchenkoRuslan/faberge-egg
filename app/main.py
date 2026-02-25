@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import assets, auth, lots, order, showrooms
+from app.api import assets, auth, order, showrooms
 from app.config import settings
 from app.db_init import run_migrations, run_seed, wait_for_db
 from app.models import get_db
@@ -314,9 +314,8 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=[
         {"name": "Showrooms", "description": "Browse showrooms and their assets."},
-        {"name": "Assets", "description": "Asset details with media and lot info."},
+        {"name": "Assets", "description": "List and get assets with media, prices, and fractions."},
         {"name": "Auth", "description": "Registration, email verification, login, profile, password reset."},
-        {"name": "Lots", "description": "List and get lots (fractions, prices)."},
         {"name": "Orders", "description": "Create order and list my orders (requires auth)."},
         {"name": "Webhooks", "description": "Called by Stripe and PayKilla."},
     ],
@@ -360,7 +359,6 @@ app.add_middleware(
 app.include_router(showrooms.router, prefix="/api/showrooms", tags=["Showrooms"])
 app.include_router(assets.router, prefix="/api/assets", tags=["Assets"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-app.include_router(lots.router, prefix="/api/lots", tags=["Lots"])
 app.include_router(order.router, prefix="/api/orders", tags=["Orders"])
 app.include_router(stripe_webhook.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(paykilla_callback.router, prefix="/webhooks", tags=["Webhooks"])

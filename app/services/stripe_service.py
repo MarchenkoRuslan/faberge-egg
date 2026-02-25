@@ -7,7 +7,7 @@ def create_checkout_session(
     order_id: int,
     amount_eur_cents: int,
     fraction_count: int,
-    lot_name: str,
+    asset_name: str,
     success_url: str,
     cancel_url: str,
 ) -> tuple[str, str]:
@@ -24,7 +24,7 @@ def create_checkout_session(
                 "price_data": {
                     "currency": "eur",
                     "product_data": {
-                        "name": f"{lot_name} - {fraction_count} fraction(s)",
+                        "name": f"{asset_name} - {fraction_count} fraction(s)",
                     },
                     "unit_amount": amount_eur_cents,
                 },

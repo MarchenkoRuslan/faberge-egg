@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import db_tasks
-from app.db_init import init_db, prepare_database, run_seed, seed_first_lot, wait_for_db
+from app.db_init import init_db, prepare_database, run_seed, seed_showroom_and_asset, wait_for_db
 from app.models.database import _normalize_database_url
-from app.models.lot import Lot
+from app.models.showroom import Showroom
 
 
 def test_normalize_database_url_postgres_scheme():
@@ -93,34 +93,21 @@ def test_init_db_runs_alembic_for_non_sqlite(monkeypatch):
     run_migrations_mock.assert_called_once()
 
 
-def test_seed_first_lot_is_idempotent(db):
-    assert seed_first_lot(db) is True
-    assert seed_first_lot(db) is False
+def test_seed_showroom_and_asset_is_idempotent(db):
+    assert seed_showroom_and_asset(db) is True
+    assert seed_showroom_and_asset(db) is False
 
-    lots = db.query(Lot).filter(Lot.slug == "faberge-egg").all()
-    assert len(lots) == 1
+    showrooms = db.query(Showroom).filter(Showroom.slug == "latvian-treasure").all()
+    assert len(showrooms) == 1
 
 
-def test_seed_first_lot_handles_concurrent_insert_conflict():
+def test_seed_showroom_and_asset_handles_concurrent_insert_conflict():
     db_session = MagicMock()
     filtered_query = db_session.query.return_value.filter.return_value
-    filtered_query.first.side_effect = [None, object()]
-    db_session.commit.side_effect = IntegrityError("INSERT", {}, Exception("duplicate key"))
+    filtered_query.first.return_value = None
+    db_session.flush.side_effect = IntegrityError("INSERT", {}, Exception("duplicate key"))
 
-    assert seed_first_lot(db_session) is False
-    db_session.rollback.assert_called_once()
-
-
-def test_seed_first_lot_reraises_unexpected_integrity_error():
-    db_session = MagicMock()
-    filtered_query = db_session.query.return_value.filter.return_value
-    filtered_query.first.side_effect = [None, None]
-    integrity_error = IntegrityError("INSERT", {}, Exception("different constraint"))
-    db_session.commit.side_effect = integrity_error
-
-    with pytest.raises(IntegrityError):
-        seed_first_lot(db_session)
-
+    assert seed_showroom_and_asset(db_session) is False
     db_session.rollback.assert_called_once()
 
 
@@ -148,34 +135,31 @@ def test_prepare_database_runs_wait_migrate_and_seed_in_order(monkeypatch):
 
 
 def test_run_seed_raises_when_schema_missing_and_required(monkeypatch):
-    monkeypatch.setattr("app.db_init.lots_table_exists", lambda: False)
+    monkeypatch.setattr("app.db_init.assets_table_exists", lambda: False)
 
     with pytest.raises(RuntimeError, match="Run migrations first"):
         run_seed(require_schema=True)
 
 
 def test_run_seed_skips_when_schema_missing_and_not_required(monkeypatch):
-    monkeypatch.setattr("app.db_init.lots_table_exists", lambda: False)
+    monkeypatch.setattr("app.db_init.assets_table_exists", lambda: False)
 
     assert run_seed(require_schema=False) is False
 
 
-def test_run_seed_opens_session_and_calls_seed_first_lot(monkeypatch):
+def test_run_seed_opens_session_and_calls_seed(monkeypatch):
     db_session = MagicMock()
     session_factory = MagicMock(return_value=db_session)
-    seed_mock = MagicMock(return_value=True)
-    showroom_seed_mock = MagicMock(return_value=False)
+    showroom_seed_mock = MagicMock(return_value=True)
 
-    monkeypatch.setattr("app.db_init.lots_table_exists", lambda: True)
+    monkeypatch.setattr("app.db_init.assets_table_exists", lambda: True)
     monkeypatch.setattr("app.db_init._table_exists", lambda t: True)
     monkeypatch.setattr("app.db_init.SessionLocal", session_factory)
-    monkeypatch.setattr("app.db_init.seed_first_lot", seed_mock)
     monkeypatch.setattr("app.db_init.seed_showroom_and_asset", showroom_seed_mock)
 
     assert run_seed(require_schema=True) is True
 
     session_factory.assert_called_once()
-    seed_mock.assert_called_once_with(db_session)
     showroom_seed_mock.assert_called_once_with(db_session)
     db_session.close.assert_called_once()
 
@@ -212,7 +196,7 @@ def test_db_tasks_migrate_command_runs_wait_and_migrations_only(monkeypatch):
 
 def test_db_tasks_seed_command_returns_error_when_schema_missing(monkeypatch):
     def fake_seed(*, require_schema):
-        raise RuntimeError("Cannot seed initial data: 'lots' table is missing. Run migrations first.")
+        raise RuntimeError("Cannot seed initial data: 'assets' table is missing. Run migrations first.")
 
     monkeypatch.setattr(db_tasks, "run_seed", fake_seed)
 

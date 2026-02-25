@@ -7,7 +7,7 @@ from app.config import settings
 from app.models import Asset, Showroom, get_db
 from app.schemas.showrooms import (
     AssetDetailResponse,
-    AssetLotResponse,
+    AssetListResponse,
     AssetMediaResponse,
     ShowroomDetailResponse,
     ShowroomListResponse,
@@ -15,6 +15,14 @@ from app.schemas.showrooms import (
 from app.services.storage import get_presigned_url
 
 router = APIRouter()
+
+
+def _showroom_image_url(showroom: Showroom, key_name: str) -> str | None:
+    meta = showroom.meta or {}
+    storage_key = meta.get(key_name)
+    if not storage_key:
+        return None
+    return get_presigned_url(storage_key)
 
 
 def _media_to_response(media) -> AssetMediaResponse:
@@ -28,34 +36,45 @@ def _media_to_response(media) -> AssetMediaResponse:
     )
 
 
-def _lot_to_response(lot) -> AssetLotResponse:
-    remaining = max(0, lot.special_price_fractions_cap - lot.sold_special_fractions)
-    return AssetLotResponse(
-        id=lot.id,
-        slug=lot.slug,
-        total_fractions=lot.total_fractions,
-        special_price_fractions_cap=lot.special_price_fractions_cap,
-        remaining_special_fractions=remaining,
-        price_special_eur=lot.price_special_eur,
-        price_nominal_eur=lot.price_nominal_eur,
+def _remaining_special(asset: Asset) -> int:
+    return max(0, asset.special_price_fractions_cap - asset.sold_special_fractions)
+
+
+def _asset_to_list(asset: Asset) -> AssetListResponse:
+    hero = next((m for m in asset.media if m.kind == "hero"), None)
+    return AssetListResponse(
+        id=asset.id,
+        slug=asset.slug,
+        name=asset.name,
+        headline=asset.headline,
+        hero_image=_media_to_response(hero) if hero else None,
+        total_fractions=asset.total_fractions,
+        special_price_fractions_cap=asset.special_price_fractions_cap,
+        remaining_special_fractions=_remaining_special(asset),
+        price_special_eur=asset.price_special_eur,
+        price_nominal_eur=asset.price_nominal_eur,
         min_fractions_to_buy=settings.MIN_FRACTIONS,
-        is_active=lot.is_active,
+        is_active=asset.is_active,
     )
 
 
 def _asset_to_detail(asset: Asset) -> AssetDetailResponse:
     media_list = [_media_to_response(m) for m in asset.media]
-    active_lots = [lot for lot in asset.lots if lot.is_active]
-    lot_response = _lot_to_response(active_lots[0]) if active_lots else None
-
     return AssetDetailResponse(
+        id=asset.id,
         slug=asset.slug,
         name=asset.name,
         headline=asset.headline,
         description=asset.description,
         meta=asset.meta,
         media=media_list,
-        lot=lot_response,
+        total_fractions=asset.total_fractions,
+        special_price_fractions_cap=asset.special_price_fractions_cap,
+        remaining_special_fractions=_remaining_special(asset),
+        price_special_eur=asset.price_special_eur,
+        price_nominal_eur=asset.price_nominal_eur,
+        min_fractions_to_buy=settings.MIN_FRACTIONS,
+        is_active=asset.is_active,
     )
 
 
@@ -78,6 +97,8 @@ def list_showrooms(
             slug=s.slug,
             name=s.name,
             headline=s.headline,
+            image_url=_showroom_image_url(s, "image_key"),
+            background_image_url=_showroom_image_url(s, "background_image_key"),
         )
         for s in showrooms
     ]
@@ -97,8 +118,6 @@ def get_showroom(
         .options(
             joinedload(Showroom.assets)
             .joinedload(Asset.media),
-            joinedload(Showroom.assets)
-            .joinedload(Asset.lots),
         )
         .filter(Showroom.slug == slug, Showroom.status == "active")
         .first()
@@ -110,7 +129,7 @@ def get_showroom(
         )
 
     active_assets = sorted(
-        [a for a in showroom.assets if a.status == "active"],
+        [a for a in showroom.assets if a.status == "active" and a.is_active],
         key=lambda a: a.sort_order,
     )
 
@@ -120,5 +139,7 @@ def get_showroom(
         headline=showroom.headline,
         description=showroom.description,
         meta=showroom.meta,
+        image_url=_showroom_image_url(showroom, "image_key"),
+        background_image_url=_showroom_image_url(showroom, "background_image_key"),
         assets=[_asset_to_detail(a) for a in active_assets],
     )

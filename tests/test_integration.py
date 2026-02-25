@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import hmac
 import json
 from unittest.mock import patch
@@ -8,8 +8,8 @@ from fastapi import status
 from app.models.order import Order
 
 
-def test_full_order_flow(client, db, test_lot):
-    """Test complete flow: register -> login -> get lots -> create order -> webhook."""
+def test_full_order_flow(client, db, test_asset):
+    """Test complete flow: register -> login -> get assets -> create order -> webhook."""
     # 1. Register user
     with patch("app.api.auth.send_verify_email") as mock_send:
         register_response = client.post(
@@ -38,12 +38,13 @@ def test_full_order_flow(client, db, test_lot):
     token = login_response.json()["accessToken"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # 3. Get list of lots
-    lots_response = client.get("/api/lots", headers=headers)
-    assert lots_response.status_code == status.HTTP_200_OK
-    lots = lots_response.json()
-    assert len(lots) > 0
-    assert lots[0]["id"] == test_lot.id
+    # 3. Get list of assets
+    with patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg"):
+        assets_response = client.get("/api/assets", headers=headers)
+    assert assets_response.status_code == status.HTTP_200_OK
+    assets = assets_response.json()
+    assert len(assets) > 0
+    assert assets[0]["id"] == test_asset.id
 
     # 4. Create order
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
@@ -53,7 +54,7 @@ def test_full_order_flow(client, db, test_lot):
         order_response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 2000,
                 "payment_method": "stripe",
             },
@@ -98,9 +99,9 @@ def test_full_order_flow(client, db, test_lot):
     assert order.status == "paid"
     assert order.external_payment_id == "cs_test_123"
 
-    # 8. Verify lot fractions were incremented
-    db.refresh(test_lot)
-    assert test_lot.sold_special_fractions == 2000
+    # 8. Verify asset fractions were incremented
+    db.refresh(test_asset)
+    assert test_asset.sold_special_fractions == 2000
 
     # 9. Get order status
     status_response = client.get(f"/api/orders/{order_id}/status", headers=headers)
@@ -117,25 +118,24 @@ def test_full_order_flow(client, db, test_lot):
     assert any(o["id"] == order_id for o in orders)
 
 
-def test_price_calculation_precision(client, db, test_lot, auth_headers):
+def test_price_calculation_precision(client, db, test_asset, auth_headers):
     """Test that price calculation uses Decimal for precision."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
-        # Test with various fraction counts
         test_cases = [
-            (1, 3),  # 0.03 * 100 * 1 = 3 cents
-            (100, 300),  # 0.03 * 100 * 100 = 300 cents
-            (1000, 3000),  # 0.03 * 100 * 1000 = 3000 cents
-            (10000, 30000),  # 0.03 * 100 * 10000 = 30000 cents
+            (1, 3),       # 0.03 * 100 * 1 = 3 cents
+            (100, 300),   # 0.03 * 100 * 100 = 300 cents
+            (1000, 3000), # 0.03 * 100 * 1000 = 3000 cents
+            (10000, 30000), # 0.03 * 100 * 10000 = 30000 cents
         ]
 
         for fraction_count, expected_cents in test_cases:
             response = client.post(
                 "/api/orders",
                 json={
-                    "lot_id": test_lot.id,
+                    "asset_id": test_asset.id,
                     "fraction_count": fraction_count,
                     "payment_method": "stripe",
                 },
@@ -152,17 +152,16 @@ def test_price_calculation_precision(client, db, test_lot, auth_headers):
             )
 
 
-def test_multiple_orders_same_lot(client, db, test_lot, auth_headers):
-    """Test creating multiple orders for the same lot."""
+def test_multiple_orders_same_asset(client, db, test_asset, auth_headers):
+    """Test creating multiple orders for the same asset."""
     with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
-        # Create first order
         response1 = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 1000,
                 "payment_method": "stripe",
             },
@@ -171,11 +170,10 @@ def test_multiple_orders_same_lot(client, db, test_lot, auth_headers):
         assert response1.status_code == status.HTTP_200_OK
         order_id1 = response1.json()["order_id"]
 
-        # Create second order
         response2 = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 500,
                 "payment_method": "stripe",
             },
@@ -184,13 +182,11 @@ def test_multiple_orders_same_lot(client, db, test_lot, auth_headers):
         assert response2.status_code == status.HTTP_200_OK
         order_id2 = response2.json()["order_id"]
 
-        # Verify both orders exist
         order1 = db.query(Order).filter(Order.id == order_id1).first()
         order2 = db.query(Order).filter(Order.id == order_id2).first()
         assert order1 is not None
         assert order2 is not None
 
-        # Process webhooks for both orders
         for order_id in [order_id1, order_id2]:
             event_data = {
                 "id": f"evt_test_{order_id}",
@@ -211,21 +207,19 @@ def test_multiple_orders_same_lot(client, db, test_lot, auth_headers):
                     headers={"stripe-signature": "test_signature"},
                 )
 
-        # Verify lot fractions were incremented correctly
-        db.refresh(test_lot)
-        assert test_lot.sold_special_fractions == 1500  # 1000 + 500
+        db.refresh(test_asset)
+        assert test_asset.sold_special_fractions == 1500
 
 
-def test_order_flow_with_paykilla(client, db, test_lot, auth_headers):
+def test_order_flow_with_paykilla(client, db, test_asset, auth_headers):
     """Test complete flow with PayKilla payment."""
     with patch("app.services.paykilla_service.create_payment") as mock_paykilla:
         mock_paykilla.return_value = "https://paykilla.com/checkout?order_id=1"
 
-        # Create order
         order_response = client.post(
             "/api/orders",
             json={
-                "lot_id": test_lot.id,
+                "asset_id": test_asset.id,
                 "fraction_count": 750,
                 "payment_method": "paykilla",
             },
@@ -234,7 +228,6 @@ def test_order_flow_with_paykilla(client, db, test_lot, auth_headers):
         assert order_response.status_code == status.HTTP_200_OK
         order_id = order_response.json()["order_id"]
 
-        # Simulate PayKilla webhook
         payload = {
             "order_id": order_id,
             "transaction_id": "tx_paykilla_123",
@@ -248,11 +241,9 @@ def test_order_flow_with_paykilla(client, db, test_lot, auth_headers):
         )
         assert webhook_response.status_code == status.HTTP_200_OK
 
-        # Verify order was updated
         order = db.query(Order).filter(Order.id == order_id).first()
         assert order.status == "paid"
         assert order.external_payment_id == "tx_paykilla_123"
 
-        # Verify lot fractions
-        db.refresh(test_lot)
-        assert test_lot.sold_special_fractions == 750
+        db.refresh(test_asset)
+        assert test_asset.sold_special_fractions == 750

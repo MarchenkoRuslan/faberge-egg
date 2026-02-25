@@ -104,13 +104,37 @@ def test_user2(db: Session):
 
 
 @pytest.fixture
-def test_lot(db: Session):
-    """Create a test lot."""
-    from app.models.lot import Lot
+def test_showroom(db: Session):
+    """Create a test showroom."""
+    from app.models.showroom import Showroom
 
-    lot = Lot(
-        name="Test Lot",
-        slug="test-lot",
+    showroom = Showroom(
+        slug="test-showroom",
+        name="Test Showroom",
+        headline="Test headline",
+        description="Test description",
+        status="active",
+        sort_order=0,
+    )
+    db.add(showroom)
+    db.commit()
+    db.refresh(showroom)
+    return showroom
+
+
+@pytest.fixture
+def test_asset(db: Session, test_showroom):
+    """Create a test asset with commerce fields."""
+    from app.models.asset import Asset
+
+    asset = Asset(
+        showroom_id=test_showroom.id,
+        slug="test-asset",
+        name="Test Asset",
+        headline="Test headline",
+        description="Test description",
+        status="active",
+        sort_order=0,
         total_fractions=100_000_000,
         special_price_fractions_cap=3_000_000,
         price_special_eur=Decimal("0.03"),
@@ -118,20 +142,25 @@ def test_lot(db: Session):
         sold_special_fractions=0,
         is_active=True,
     )
-    db.add(lot)
+    db.add(asset)
     db.commit()
-    db.refresh(lot)
-    return lot
+    db.refresh(asset)
+    return asset
 
 
 @pytest.fixture
-def test_lot_inactive(db: Session):
-    """Create an inactive test lot."""
-    from app.models.lot import Lot
+def test_asset_inactive(db: Session, test_showroom):
+    """Create an inactive test asset."""
+    from app.models.asset import Asset
 
-    lot = Lot(
-        name="Inactive Lot",
-        slug="inactive-lot",
+    asset = Asset(
+        showroom_id=test_showroom.id,
+        slug="inactive-asset",
+        name="Inactive Asset",
+        headline="Inactive headline",
+        description="Inactive description",
+        status="active",
+        sort_order=1,
         total_fractions=100_000_000,
         special_price_fractions_cap=3_000_000,
         price_special_eur=Decimal("0.03"),
@@ -139,10 +168,10 @@ def test_lot_inactive(db: Session):
         sold_special_fractions=0,
         is_active=False,
     )
-    db.add(lot)
+    db.add(asset)
     db.commit()
-    db.refresh(lot)
-    return lot
+    db.refresh(asset)
+    return asset
 
 
 @pytest.fixture

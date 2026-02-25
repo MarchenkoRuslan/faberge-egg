@@ -4,10 +4,29 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Asset, get_db
-from app.api.showrooms import _asset_to_detail
-from app.schemas.showrooms import AssetDetailResponse
+from app.api.showrooms import _asset_to_detail, _asset_to_list
+from app.schemas.showrooms import AssetDetailResponse, AssetListResponse
 
 router = APIRouter()
+
+
+@router.get(
+    "",
+    response_model=list[AssetListResponse],
+    summary="List all active assets",
+)
+def list_assets(
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Returns all active assets with remaining special fractions and prices."""
+    assets = (
+        db.query(Asset)
+        .options(joinedload(Asset.media))
+        .filter(Asset.is_active.is_(True), Asset.status == "active")
+        .order_by(Asset.sort_order)
+        .all()
+    )
+    return [_asset_to_list(a) for a in assets]
 
 
 @router.get(
@@ -21,11 +40,8 @@ def get_asset(
 ):
     asset = (
         db.query(Asset)
-        .options(
-            joinedload(Asset.media),
-            joinedload(Asset.lots),
-        )
-        .filter(Asset.slug == slug, Asset.status == "active")
+        .options(joinedload(Asset.media))
+        .filter(Asset.slug == slug, Asset.status == "active", Asset.is_active.is_(True))
         .first()
     )
     if not asset:

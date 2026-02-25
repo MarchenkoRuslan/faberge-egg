@@ -24,7 +24,7 @@ def _create_stripe_checkout(
     order_id: int,
     amount_eur_cents: int,
     fraction_count: int,
-    lot_name: str,
+    asset_name: str,
     success_url: str,
     cancel_url: str,
 ) -> CheckoutResult:
@@ -32,7 +32,7 @@ def _create_stripe_checkout(
         order_id=order_id,
         amount_eur_cents=amount_eur_cents,
         fraction_count=fraction_count,
-        lot_name=lot_name,
+        asset_name=asset_name,
         success_url=success_url,
         cancel_url=cancel_url,
     )
@@ -43,7 +43,7 @@ def _create_paykilla_checkout(
     order_id: int,
     amount_eur_cents: int,
     fraction_count: int,
-    lot_name: str,
+    asset_name: str,
     success_url: str,
     cancel_url: str,
 ) -> CheckoutResult:
