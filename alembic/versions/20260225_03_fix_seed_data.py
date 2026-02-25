@@ -30,7 +30,7 @@ def upgrade() -> None:
         sa.text(
             """
             UPDATE showrooms
-            SET meta = :meta
+            SET meta = :meta ::jsonb
             WHERE slug = 'latvian-treasure' AND meta IS NULL
             """
         ),
@@ -63,12 +63,18 @@ def upgrade() -> None:
             sa.text(
                 """
                 INSERT INTO asset_media (asset_id, kind, media_type, storage_key, filename, alt_text, sort_order)
-                SELECT a.id, :kind, :media_type, :storage_key, :filename, :alt_text, :sort_order
+                SELECT a.id,
+                       :kind ::varchar,
+                       :media_type ::varchar,
+                       :storage_key ::varchar,
+                       :filename ::varchar,
+                       :alt_text ::varchar,
+                       :sort_order
                 FROM assets a
                 WHERE a.slug = 'faberge-egg'
                   AND NOT EXISTS (
                       SELECT 1 FROM asset_media am
-                      WHERE am.asset_id = a.id AND am.storage_key = :storage_key
+                      WHERE am.asset_id = a.id AND am.storage_key = :storage_key ::varchar
                   )
                 """
             ),
