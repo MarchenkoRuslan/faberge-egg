@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -155,7 +156,7 @@ def test_paykilla_create_payment_returns_url():
 
     assert isinstance(url, str)
     assert "order_id=123" in url
-    assert "custom.com" in url
+    assert urlsplit(url).netloc == "custom.com"
 
 
 def test_paykilla_create_payment_preserves_existing_query_params_and_fragments():

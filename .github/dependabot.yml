@@ -7,3 +7,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # CVE-2024-23342: no patched version; we use HS256 (not ECDSA). See SECURITY.md
+      - dependency-name: "ecdsa"

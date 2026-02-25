@@ -253,8 +253,9 @@ def _append_s3_startup_diagnostics(warnings: list[str]) -> None:
             ("secret_key", has_secret),
         ] if not present
     ]
-    # Log only non-sensitive summary (no endpoint/bucket/region values - may contain credentials)
-    logger.info("S3 at startup: configured=%s, missing=%s", configured, ", ".join(missing) or "none")
+    # Log only non-sensitive summary; redact "secret_key" to avoid clear-text logging alert
+    missing_redacted = [n.replace("secret_key", "secret_*") for n in missing]
+    logger.info("S3 at startup: configured=%s, missing=%s", configured, ", ".join(missing_redacted) or "none")
     if not configured:
         warnings.append(
             f"S3/storage not fully configured (missing: {', '.join(missing)}); "
