@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
@@ -85,11 +85,15 @@ def _asset_to_detail(asset: Asset) -> AssetDetailResponse:
 )
 def list_showrooms(
     db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     showrooms = (
         db.query(Showroom)
         .filter(Showroom.status == "active")
         .order_by(Showroom.sort_order)
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return [

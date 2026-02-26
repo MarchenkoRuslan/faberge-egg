@@ -141,6 +141,18 @@ def test_validate_required_env_rejects_insecure_jwt_on_railway(monkeypatch):
         _validate_required_env_for_runtime()
 
 
+def test_validate_required_env_rejects_missing_wallet_key_when_blockchain_enabled(monkeypatch):
+    monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
+    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000")
+    monkeypatch.setenv("BLOCKCHAIN_ENABLED", "true")
+    monkeypatch.delenv("WALLET_ENCRYPTION_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="WALLET_ENCRYPTION_KEY"):
+        _validate_required_env_for_runtime()
+
+
 def test_validate_required_env_rejects_invalid_base_url(monkeypatch):
     monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
     monkeypatch.setenv("JWT_SECRET", "test-secret")

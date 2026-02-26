@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Asset, get_db
@@ -17,6 +17,8 @@ router = APIRouter()
 )
 def list_assets(
     db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     """Returns all active assets with remaining special fractions and prices."""
     assets = (
@@ -24,6 +26,8 @@ def list_assets(
         .options(joinedload(Asset.media))
         .filter(Asset.is_active.is_(True), Asset.status == "active")
         .order_by(Asset.sort_order)
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return [_asset_to_list(a) for a in assets]

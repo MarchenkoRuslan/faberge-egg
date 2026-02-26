@@ -151,6 +151,31 @@ def test_on_upsale_purchase_no_campaign(db, test_user, test_asset):
 
 
 @patch("app.services.upsale_campaign_service.settings")
+@patch("app.services.upsale_campaign_service.send_upsale_email", return_value=None)
+def test_process_upsale1_pending_does_not_advance_on_email_failure(
+    mock_send, mock_settings, db, test_user, test_asset,
+):
+    """When send_upsale_email fails, campaign must not advance (retry on next tick)."""
+    mock_settings.UPSALE_CAMPAIGN_ENABLED = True
+    mock_settings.UPSALE_CAMPAIGN_EXPIRE_DAYS = 60
+    mock_settings.FRONTEND_URL = "http://localhost:3000"
+    order = _make_order(db, test_user.id, test_asset.id)
+    campaign = create_campaign(db, order)
+    db.commit()
+
+    campaign.next_action_at = _utcnow() - timedelta(minutes=1)
+    db.commit()
+
+    processed = process_due_campaigns(db)
+    assert processed == 1
+
+    db.refresh(campaign)
+    assert campaign.step == "upsale1_pending"
+    assert campaign.upsale1_sent_at is None
+    mock_send.assert_called_once()
+
+
+@patch("app.services.upsale_campaign_service.settings")
 @patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-id-123")
 def test_process_upsale1_pending_sends_email(
     mock_send, mock_settings, db, test_user, test_asset,
@@ -404,6 +429,20 @@ def test_list_campaigns_empty(client, auth_headers):
     resp = client.get("/api/admin/campaigns", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_list_campaigns_forbidden_for_non_admin(client, test_user_non_admin):
+    """Non-admin user must receive 403 when accessing campaign endpoints."""
+    resp = client.post(
+        "/api/auth/login",
+        json={"email": "nonadmin@example.com", "password": "testpassword123"},
+    )
+    assert resp.status_code == 200
+    token = resp.json()["accessToken"]
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.get("/api/admin/campaigns", headers=headers)
+    assert resp.status_code == 403
+    assert "admin" in resp.json()["detail"].lower()
 
 
 def test_list_and_get_campaign(client, auth_headers, db, test_user, test_asset):

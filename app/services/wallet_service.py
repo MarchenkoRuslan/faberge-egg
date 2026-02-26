@@ -13,16 +13,25 @@ from app.services.blockchain_service import get_blockchain_service
 
 logger = logging.getLogger(__name__)
 
+# Cached Fernet instance when using ephemeral key (dev/test only).
+# Ensures consistent encryption/decryption within process lifetime.
+_cached_fernet: Fernet | None = None
+
 
 def _get_fernet() -> Fernet:
+    global _cached_fernet
     key = settings.WALLET_ENCRYPTION_KEY
-    if not key:
-        key = base64.urlsafe_b64encode(os.urandom(32)).decode()
-        logger.warning(
-            "WALLET_ENCRYPTION_KEY is not set; generated ephemeral key. "
-            "Encrypted wallet keys will be unrecoverable after restart.",
-        )
-    return Fernet(key.encode() if isinstance(key, str) else key)
+    if key:
+        return Fernet(key.encode() if isinstance(key, str) else key)
+    if _cached_fernet is not None:
+        return _cached_fernet
+    ephemeral_key = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    logger.warning(
+        "WALLET_ENCRYPTION_KEY is not set; generated ephemeral key (cached for process). "
+        "Encrypted wallet keys will be unrecoverable after restart.",
+    )
+    _cached_fernet = Fernet(ephemeral_key.encode())
+    return _cached_fernet
 
 
 def _encrypt_private_key(private_key: str) -> str:

@@ -9,7 +9,9 @@ class AssetMedia(Base):
     __tablename__ = "asset_media"
 
     id = Column(Integer, primary_key=True, index=True)
-    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    asset_id = Column(
+        Integer, ForeignKey("assets.id", ondelete="RESTRICT"), nullable=False,
+    )
     kind = Column(String(50), nullable=False)
     media_type = Column(String(50), nullable=False)
     storage_key = Column(String(1024), nullable=False)

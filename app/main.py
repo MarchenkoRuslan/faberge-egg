@@ -3,10 +3,13 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from typing import Annotated
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
 from app.api import assets, auth, campaigns, order, provenance, showrooms
 from app.config import settings
@@ -241,6 +244,17 @@ def _append_resend_startup_diagnostics(warnings: list[str]) -> None:
     warnings.extend(resend_warnings)
 
 
+def _validate_wallet_encryption_key(errors: list[str]) -> None:
+    """When BLOCKCHAIN_ENABLED, WALLET_ENCRYPTION_KEY must be set."""
+    if not settings.BLOCKCHAIN_ENABLED:
+        return
+    if not settings.WALLET_ENCRYPTION_KEY.strip():
+        errors.append(
+            "BLOCKCHAIN_ENABLED=true requires WALLET_ENCRYPTION_KEY. "
+            "Set WALLET_ENCRYPTION_KEY in environment.",
+        )
+
+
 def _append_s3_startup_diagnostics(warnings: list[str]) -> None:
     endpoint = settings.S3_ENDPOINT
     bucket = settings.S3_BUCKET
@@ -271,6 +285,7 @@ def _validate_required_env_for_runtime() -> None:
     is_railway = _is_railway_runtime()
 
     _validate_jwt_env(is_railway, errors)
+    _validate_wallet_encryption_key(errors)
     _validate_base_url_env(is_railway, errors, warnings)
     _validate_cors_origins_env(is_railway, errors, warnings)
     _append_resend_startup_diagnostics(warnings)
@@ -433,5 +448,15 @@ def root():
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(db: Annotated[Session, Depends(get_db)]):
+    """Health check including database connectivity."""
+    from sqlalchemy import text
+
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(
+            content={"status": "error", "database": "unavailable"},
+            status_code=503,
+        )
+    return {"status": "ok", "database": "ok"}

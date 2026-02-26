@@ -70,7 +70,7 @@ def get_payment_gateways() -> dict[str, PaymentGateway]:
             create_checkout=_create_paykilla_checkout,
             success_url=settings.PAYKILLA_SUCCESS_URL,
             cancel_url=settings.PAYKILLA_CANCEL_URL,
-            enabled=bool(settings.PAYKILLA_API_KEY),
+            enabled=bool(settings.PAYKILLA_API_KEY) and settings.PAYKILLA_IMPLEMENTED,
         ),
     }
 

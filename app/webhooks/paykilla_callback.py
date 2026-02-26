@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -97,6 +98,9 @@ def _log_paykilla_settlement_result(result: PaymentSettlementResult) -> None:
     if result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
         logger.warning("Order %s not found", result.order_id)
         return
+    if result.status == PaymentSettlementStatus.ORDER_NOT_PENDING:
+        logger.warning("Order %s is not in pending status", result.order_id)
+        return
     if result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
         logger.warning(
             "Order %s payment method is %s, not paykilla",
@@ -130,7 +134,7 @@ def _log_paykilla_settlement_result(result: PaymentSettlementResult) -> None:
 )
 async def paykilla_webhook(
     request: Request,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     PayKilla callback for successful crypto payment.

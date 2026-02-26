@@ -180,7 +180,9 @@ def _complete(campaign: UpsaleCampaign) -> None:
 # ---------------------------------------------------------------------------
 
 def _handle_upsale1_pending(db: Session, c: UpsaleCampaign) -> None:
-    _send_campaign_email(db, campaign=c, email_type="upsale1")
+    if not _send_campaign_email(db, campaign=c, email_type="upsale1"):
+        c.next_action_at = _now() + timedelta(minutes=5)
+        return
     c.upsale1_sent_at = _now()
     _advance(c, "upsale1_sent", _STEP_DELAYS["upsale1_sent"])
 
@@ -199,7 +201,9 @@ def _handle_upsale1_sent(db: Session, c: UpsaleCampaign) -> None:
 
 
 def _handle_upsale2_pending(db: Session, c: UpsaleCampaign) -> None:
-    _send_campaign_email(db, campaign=c, email_type="upsale2")
+    if not _send_campaign_email(db, campaign=c, email_type="upsale2"):
+        c.next_action_at = _now() + timedelta(minutes=5)
+        return
     c.upsale2_sent_at = _now()
     _advance(c, "upsale2_sent", _STEP_DELAYS["upsale2_sent"])
 
@@ -218,7 +222,9 @@ def _handle_upsale2_sent(db: Session, c: UpsaleCampaign) -> None:
 
 
 def _handle_upsale2_reminder_pending(db: Session, c: UpsaleCampaign) -> None:
-    _send_campaign_email(db, campaign=c, email_type="upsale2_reminder")
+    if not _send_campaign_email(db, campaign=c, email_type="upsale2_reminder"):
+        c.next_action_at = _now() + timedelta(minutes=5)
+        return
     c.upsale2_reminder_sent_at = _now()
     _advance(c, "upsale2_reminder_sent", _STEP_DELAYS["upsale2_reminder_sent"])
 
@@ -235,7 +241,9 @@ def _handle_upsale2_reminder_sent(db: Session, c: UpsaleCampaign) -> None:
 
 
 def _handle_bonus_pending(db: Session, c: UpsaleCampaign) -> None:
-    _send_campaign_email(db, campaign=c, email_type="bonus")
+    if not _send_campaign_email(db, campaign=c, email_type="bonus"):
+        c.next_action_at = _now() + timedelta(minutes=5)
+        return
     c.bonus_sent_at = _now()
     _advance(c, "bonus_sent", _STEP_DELAYS["bonus_sent"])
 
@@ -254,7 +262,9 @@ def _handle_bonus_sent(db: Session, c: UpsaleCampaign) -> None:
 
 
 def _handle_upsale3_pending(db: Session, c: UpsaleCampaign) -> None:
-    _send_campaign_email(db, campaign=c, email_type="upsale3")
+    if not _send_campaign_email(db, campaign=c, email_type="upsale3"):
+        c.next_action_at = _now() + timedelta(minutes=5)
+        return
     c.upsale3_sent_at = _now()
     _complete(c)
 
@@ -385,35 +395,33 @@ def process_due_campaigns(db: Session) -> int:
 
     processed = 0
     for campaign in campaigns:
-        if _ensure_aware(campaign.expires_at) <= now:
-            campaign.status = "expired"
-            campaign.step = "completed"
-            logger.info("Campaign %d expired", campaign.id)
-            processed += 1
-            continue
-
-        handler = _STEP_HANDLERS.get(campaign.step)
-        if not handler:
-            logger.warning(
-                "Campaign %d has unknown step %r; marking completed",
-                campaign.id, campaign.step,
-            )
-            _complete(campaign)
-            processed += 1
-            continue
-
         try:
+            if _ensure_aware(campaign.expires_at) <= now:
+                campaign.status = "expired"
+                campaign.step = "completed"
+                logger.info("Campaign %d expired", campaign.id)
+                db.commit()
+                processed += 1
+                continue
+
+            handler = _STEP_HANDLERS.get(campaign.step)
+            if not handler:
+                logger.warning(
+                    "Campaign %d has unknown step %r; marking completed",
+                    campaign.id, campaign.step,
+                )
+                _complete(campaign)
+                db.commit()
+                processed += 1
+                continue
+
             handler(db, campaign)
+            db.commit()
             processed += 1
         except Exception:
+            db.rollback()
             logger.exception("Error processing campaign %d step %s", campaign.id, campaign.step)
 
     if processed:
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.exception("Failed to commit campaign batch")
-            raise
         logger.info("Processed %d campaign(s)", processed)
     return processed

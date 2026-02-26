@@ -43,3 +43,20 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+def get_admin_user(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Require authenticated user with admin privileges (is_admin or email in ADMIN_EMAILS)."""
+    from app.config import settings
+
+    if user.is_admin:
+        return user
+    admin_emails = settings.ADMIN_EMAILS
+    if admin_emails and user.email.lower() in admin_emails:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin access required",
+    )

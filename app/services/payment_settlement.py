@@ -18,6 +18,7 @@ class PaymentSettlementStatus(str, Enum):
     PAID = "paid"
     ALREADY_PAID = "already_paid"
     ORDER_NOT_FOUND = "order_not_found"
+    ORDER_NOT_PENDING = "order_not_pending"
     WRONG_PAYMENT_METHOD = "wrong_payment_method"
     AMOUNT_MISMATCH = "amount_mismatch"
     ASSET_NOT_FOUND = "asset_not_found"
@@ -77,6 +78,15 @@ def _validate_order_for_settlement(
             db,
             PaymentSettlementResult(
                 status=PaymentSettlementStatus.ALREADY_PAID,
+                order_id=order.id,
+                asset_id=order.asset_id,
+            ),
+        )
+    if order.status != "pending":
+        return _rollback_and_result(
+            db,
+            PaymentSettlementResult(
+                status=PaymentSettlementStatus.ORDER_NOT_PENDING,
                 order_id=order.id,
                 asset_id=order.asset_id,
             ),

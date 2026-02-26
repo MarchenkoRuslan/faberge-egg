@@ -1,4 +1,5 @@
 import logging
+from typing import Annotated
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -96,6 +97,9 @@ def _log_stripe_settlement_result(result: PaymentSettlementResult) -> None:
     if result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
         logger.warning("Order %s not found", result.order_id)
         return
+    if result.status == PaymentSettlementStatus.ORDER_NOT_PENDING:
+        logger.warning("Order %s is not in pending status", result.order_id)
+        return
     if result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
         logger.warning(
             "Order %s payment method is %s, not stripe",
@@ -158,7 +162,7 @@ def _handle_checkout_session_completed(session: dict, db: Session) -> None:
 )
 async def stripe_webhook(
     request: Request,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     Stripe sends events here. We handle checkout.session.completed:

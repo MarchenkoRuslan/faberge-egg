@@ -118,6 +118,11 @@ class Settings:
         return os.getenv("PAYKILLA_API_KEY", "")
 
     @property
+    def PAYKILLA_IMPLEMENTED(self) -> bool:
+        """Set to True when PayKilla create_payment is implemented. Until then, gateway stays disabled."""
+        return self._get_bool("PAYKILLA_IMPLEMENTED", False)
+
+    @property
     def PAYKILLA_WEBHOOK_SECRET(self) -> str:
         return os.getenv("PAYKILLA_WEBHOOK_SECRET", "")
 
@@ -132,6 +137,14 @@ class Settings:
     @property
     def MIN_FRACTIONS(self) -> int:
         return self._get_int("MIN_FRACTIONS", 1)
+
+    @property
+    def ADMIN_EMAILS(self) -> list[str]:
+        """Comma-separated list of emails that are treated as admins (e.g. for initial setup)."""
+        raw = os.getenv("ADMIN_EMAILS", "").strip()
+        if not raw:
+            return []
+        return [e.strip().lower() for e in raw.split(",") if e.strip()]
 
     @property
     def CORS_ORIGINS(self) -> str:

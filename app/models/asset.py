@@ -11,7 +11,9 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id = Column(Integer, primary_key=True, index=True)
-    showroom_id = Column(Integer, ForeignKey("showrooms.id"), nullable=False)
+    showroom_id = Column(
+        Integer, ForeignKey("showrooms.id", ondelete="RESTRICT"), nullable=False,
+    )
     slug = Column(String(255), unique=True, index=True, nullable=False)
     name = Column(String(255), nullable=False)
     headline = Column(String(500), nullable=True)
@@ -35,6 +37,8 @@ class Asset(Base):
     )
 
     showroom = relationship("Showroom", back_populates="assets")
+    orders = relationship("Order", back_populates="asset")
+    fraction_transfers = relationship("FractionTransfer", back_populates="asset")
     media = relationship(
         "AssetMedia",
         back_populates="asset",

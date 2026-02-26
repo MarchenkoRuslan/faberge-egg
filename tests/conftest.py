@@ -10,17 +10,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Override settings for tests before importing app modules.
-TEST_DATABASE_URL = "sqlite:///./test_app.db"
+TEST_DATABASE_URL = "sqlite:///:memory:"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only"
 os.environ["STRIPE_SECRET_KEY"] = "sk_test_mock"
 os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_mock"
 os.environ["PAYKILLA_API_KEY"] = "pk_test_mock"
 os.environ["PAYKILLA_WEBHOOK_SECRET"] = "pk_whsec_test_mock"
+os.environ["PAYKILLA_IMPLEMENTED"] = "true"  # Tests use mocked create_payment
 # Relax rate limit in tests so email-sending endpoints don't return 429
 os.environ["RATE_LIMIT_EMAIL_REQUESTS"] = "1000"
 os.environ["RATE_LIMIT_EMAIL_WINDOW_SECONDS"] = "1"
 os.environ["WALLET_ENCRYPTION_KEY"] = "uN4BJBTnBE7uXEe0bvq4Zmd6QNbRX6rGqljTTyAW4Is="
+os.environ["ADMIN_EMAILS"] = "test@example.com,test2@example.com"
 
 # Create test database engine.
 test_engine = create_engine(
@@ -71,6 +73,27 @@ def test_user(db: Session):
     user = User(
         email="test@example.com",
         display_name="Test User",
+        hashed_password=get_password_hash("testpassword123"),
+        is_email_verified=True,
+        email_verified_at=datetime.now(timezone.utc),
+        terms_accepted_at=datetime.now(timezone.utc),
+        terms_accepted_ip="127.0.0.1",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def test_user_non_admin(db: Session):
+    """Create a test user without admin privileges."""
+    from app.api.auth import get_password_hash
+    from app.models.user import User
+
+    user = User(
+        email="nonadmin@example.com",
+        display_name="Non Admin",
         hashed_password=get_password_hash("testpassword123"),
         is_email_verified=True,
         email_verified_at=datetime.now(timezone.utc),

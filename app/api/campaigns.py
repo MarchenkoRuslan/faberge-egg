@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user
+from app.dependencies import get_admin_user
 from app.models import User, get_db
 from app.models.upsale_campaign import UpsaleCampaign
 from app.schemas.campaigns import (
@@ -26,11 +26,11 @@ router = APIRouter()
 @router.get("/campaigns", response_model=list[CampaignResponse])
 def list_campaigns(
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
+    _user: Annotated[User, Depends(get_admin_user)],
     campaign_status: Annotated[str | None, Query(alias="status")] = None,
     user_id: int | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ):
     query = db.query(UpsaleCampaign)
     if campaign_status:
@@ -45,7 +45,7 @@ def list_campaigns(
 def get_campaign(
     campaign_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
+    _user: Annotated[User, Depends(get_admin_user)],
 ):
     campaign = db.query(UpsaleCampaign).filter(UpsaleCampaign.id == campaign_id).first()
     if not campaign:
@@ -60,7 +60,7 @@ def get_campaign(
 def cancel_campaign(
     campaign_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
+    _user: Annotated[User, Depends(get_admin_user)],
 ):
     campaign = db.query(UpsaleCampaign).filter(UpsaleCampaign.id == campaign_id).first()
     if not campaign:
