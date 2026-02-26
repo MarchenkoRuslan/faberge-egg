@@ -18,11 +18,11 @@ REST API for a fractional marketplace with JWT auth, showrooms, assets, orders, 
 
 ## Project Layout
 
-- `app/main.py` - FastAPI app setup and router registration
-- `app/api/` - auth, showrooms, assets, order, provenance, campaigns
-- `app/webhooks/` - Stripe and PayKilla webhook handlers
-- `app/services/` - payment, auth, storage, upsale campaign helpers
-- `app/models/` - SQLAlchemy models and DB wiring
+- `app/main.py` - FastAPI app setup
+- `app/core/` - config, database, dependencies, rate limiting
+- `app/domains/` - auth, catalog (showrooms+assets), orders, provenance, campaigns, payments
+- `app/shared/` - storage, email, blockchain, wallet services
+- `app/models/` - SQLAlchemy models
 - `alembic/` - database migrations
 - `tests/` - automated tests
 
@@ -37,84 +37,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
 
 ## Environment Variables
 
-Create `.env` in repository root (you can copy from `.env.example`).
-
-```env
-# REQUIRED (app startup fails without this)
-DATABASE_URL=postgresql://user:password@localhost:5432/marketplace
-
-# REQUIRED IN PRODUCTION (default is insecure)
-JWT_SECRET=change-me-in-production
-
-# REQUIRED FOR EMAIL FLOWS (register verification + password reset, Resend)
-RESEND_API_KEY=
-RESEND_FROM_EMAIL=Acme <onboarding@resend.dev>
-RESEND_TEMPLATE_VERIFY_EMAIL=
-RESEND_TEMPLATE_PASSWORD_RESET=
-
-# OPTIONAL: auth token settings
-JWT_ALGORITHM=HS256
-JWT_EXPIRE_MINUTES=60
-JWT_REFRESH_EXPIRE_DAYS=30
-EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES=1440
-PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
-EMAIL_RESEND_COOLDOWN_SECONDS=60
-
-# OPTIONAL: frontend links used in emails
-FRONTEND_URL=http://localhost:3000
-EMAIL_VERIFY_PATH=/verify-email
-PASSWORD_RESET_PATH=/restore-password
-
-# OPTIONAL: admin access (comma-separated emails; users in this list get admin rights)
-ADMIN_EMAILS=admin@example.com
-
-# OPTIONAL: Stripe (required only if Stripe payments are enabled)
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-STRIPE_SUCCESS_URL=http://localhost:3000/success
-STRIPE_CANCEL_URL=http://localhost:3000/cancel
-
-# OPTIONAL: PayKilla (required only if PayKilla payments are enabled)
-# PayKilla gateway stays disabled until create_payment is implemented; set PAYKILLA_IMPLEMENTED=true when ready.
-PAYKILLA_API_KEY=
-PAYKILLA_WEBHOOK_SECRET=
-PAYKILLA_IMPLEMENTED=false
-PAYKILLA_SUCCESS_URL=http://localhost:3000/success
-PAYKILLA_CANCEL_URL=http://localhost:3000/cancel
-
-# OPTIONAL: app behavior/runtime
-MIN_FRACTIONS=1
-CORS_ORIGINS=http://localhost:3000,http://localhost:3001
-BASE_URL=http://localhost:8000
-DB_CONNECT_RETRIES=10
-DB_CONNECT_RETRY_DELAY_SECONDS=1
-RUN_MIGRATIONS_ON_STARTUP=true
-RUN_SEED_ON_STARTUP=true
-
-# OPTIONAL: blockchain (when BLOCKCHAIN_ENABLED=true, WALLET_ENCRYPTION_KEY is required)
-BLOCKCHAIN_ENABLED=false
-WALLET_ENCRYPTION_KEY=
-BLOCKCHAIN_RPC_URL=
-BLOCKCHAIN_CONTRACT_ADDRESS=
-BLOCKCHAIN_EXPLORER_URL=
-
-# OPTIONAL: upsale campaigns (post-purchase email marketing)
-UPSALE_CAMPAIGN_ENABLED=false
-UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS=300
-UPSALE_CAMPAIGN_EXPIRE_DAYS=60
-RESEND_TEMPLATE_UPSALE1=
-RESEND_TEMPLATE_UPSALE2=
-RESEND_TEMPLATE_UPSALE3=
-RESEND_TEMPLATE_BONUS_UPSALE=
-
-# OPTIONAL: S3-compatible storage (Railway Bucket or AWS S3)
-S3_ENDPOINT=
-S3_ACCESS_KEY_ID=
-S3_SECRET_ACCESS_KEY=
-S3_BUCKET=
-S3_REGION=auto
-PRESIGNED_URL_EXPIRES=3600
-```
+Copy `.env.example` to `.env` and adjust. See `.env.example` for the full list with descriptions.
 
 ## Migrations
 
