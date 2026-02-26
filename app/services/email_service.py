@@ -1,7 +1,11 @@
 """
 Email sending via Resend (https://resend.com).
 
-Uses Resend Python SDK and dashboard templates for verification and password reset.
+Uses Resend Python SDK and dashboard templates for:
+- Email verification (registration)
+- Password reset
+- Upsale campaign emails (upsale1, upsale2, upsale3, bonus)
+
 Docs: https://resend.com/docs/send-with-python
 Templates: https://resend.com/docs/dashboard/templates/introduction
 """
@@ -22,11 +26,13 @@ VAR_USER_NAME = "USER_NAME"
 VAR_ASSET_NAME = "ASSET_NAME"
 VAR_BUY_LINK = "BUY_LINK"
 
-UPSALE_TEMPLATE_MAP: dict[str, str] = {}
-
 
 def _get_upsale_template_map() -> dict[str, str]:
-    """Lazily build email_type -> template_id mapping from settings."""
+    """Build email_type -> Resend template_id mapping from settings.
+
+    Called per-send so newly set env vars are picked up without restart.
+    upsale2_reminder reuses the upsale2 template.
+    """
     return {
         "upsale1": settings.RESEND_TEMPLATE_UPSALE1,
         "upsale2": settings.RESEND_TEMPLATE_UPSALE2,

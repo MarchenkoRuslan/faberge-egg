@@ -70,6 +70,14 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
   - `app/webhooks/paykilla_callback.py`
   - `tests/test_services.py`
   - `tests/test_webhooks.py`
+- Upsale campaigns (post-purchase email marketing):
+  - `app/models/upsale_campaign.py`
+  - `app/services/upsale_campaign_service.py`
+  - `app/services/email_service.py` (send_upsale_email)
+  - `app/services/payment_settlement.py` (_trigger_upsale_campaign)
+  - `app/api/campaigns.py`
+  - `app/schemas/campaigns.py`
+  - `tests/test_upsale_campaigns.py`
 - DB/session wiring:
   - `app/models/database.py`
   - `tests/conftest.py`
@@ -92,6 +100,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
   - Showrooms/assets: `pytest -q tests/test_showrooms.py`
   - Assets/orders: `pytest -q tests/test_lots.py tests/test_orders.py`
   - Payments: `pytest -q tests/test_services.py tests/test_webhooks.py`
+  - Upsale campaigns: `pytest -q tests/test_upsale_campaigns.py`
 - Run full suite for cross-cutting changes: `pytest -q`.
 
 ## Known Context to Avoid Re-Learning
@@ -103,6 +112,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - S3/storage config (`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, etc.) is optional; storage service degrades gracefully when not configured.
 - Seed creates showroom "latvian-treasure", asset "faberge-egg" (with commerce fields), and creates media records with storage keys under `latvian-treasure/faberge-egg/`.
 - The `lots` table has been merged into `assets`: all commerce fields (fractions, prices, is_active) now live directly on the Asset model.
+- **Upsale campaigns**: post-purchase email marketing funnel (4d→upsale1→7d check→upsale2/bonus→upsale3). State machine in `app/services/upsale_campaign_service.py`. Background asyncio-task in `lifespan()` processes due campaigns every N seconds. Triggered from `settle_order_payment()`. Gated by `UPSALE_CAMPAIGN_ENABLED` (default: False). Requires Resend template IDs: `RESEND_TEMPLATE_UPSALE1`, `_UPSALE2`, `_UPSALE3`, `_BONUS_UPSALE`. Admin API at `/api/admin/campaigns`. Tables: `upsale_campaigns`, `campaign_email_logs`.
 
 ## Cursor Cloud specific instructions
 

@@ -1,3 +1,12 @@
+"""Admin endpoints for monitoring and managing upsale email campaigns.
+
+Mounted at ``/api/admin/campaigns``.  All endpoints require JWT auth.
+
+- ``GET  /campaigns``             -- list campaigns (filter by status, user_id)
+- ``GET  /campaigns/{id}``        -- campaign detail with email log
+- ``POST /campaigns/{id}/cancel`` -- cancel an active campaign
+"""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

@@ -1,3 +1,20 @@
+"""Post-purchase upsale email campaign models.
+
+UpsaleCampaign tracks a single user's journey through the upsale funnel
+after purchasing fractions of an asset.  CampaignEmailLog is an append-only
+audit trail of every email sent (or failed) within a campaign.
+
+State machine steps (see ``app/services/upsale_campaign_service.py``):
+
+    upsale1_pending  -> upsale1_sent  -> upsale2_pending | bonus_pending
+    upsale2_pending  -> upsale2_sent  -> upsale3_pending | upsale2_reminder_pending
+    upsale2_reminder_pending -> upsale2_reminder_sent -> completed
+    bonus_pending    -> bonus_sent    -> upsale3_pending | completed
+    upsale3_pending  -> upsale3_sent  -> completed
+
+Campaign statuses: active, completed, expired, cancelled.
+"""
+
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -6,6 +23,22 @@ from app.models.database import Base
 
 
 class UpsaleCampaign(Base):
+    """One campaign per (user, asset) after a purchase.
+
+    Fields:
+        original_order_id: The order that triggered this campaign.
+        step: Current position in the state machine (see module docstring).
+        status: ``active`` while running; terminal values are
+            ``completed``, ``expired``, ``cancelled``.
+        next_action_at: When the background processor should next act on this
+            campaign (send email or check for a purchase response).
+        *_sent_at: Timestamps of when each email type was dispatched.
+        *_order_id: Links to follow-up orders placed by the user in response
+            to each upsale email (NULL if no purchase detected).
+        expires_at: Hard deadline after which the campaign is marked expired
+            regardless of its current step.
+    """
+
     __tablename__ = "upsale_campaigns"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -47,6 +80,16 @@ class UpsaleCampaign(Base):
 
 
 class CampaignEmailLog(Base):
+    """Append-only log of every email dispatched within a campaign.
+
+    Fields:
+        email_type: One of ``upsale1``, ``upsale2``, ``upsale2_reminder``,
+            ``upsale3``, ``bonus``.
+        status: ``sent`` on success, ``failed`` on error.
+        resend_message_id: Resend API message ID (for delivery tracking).
+        error: Error description when status is ``failed``.
+    """
+
     __tablename__ = "campaign_email_logs"
 
     id = Column(Integer, primary_key=True, index=True)

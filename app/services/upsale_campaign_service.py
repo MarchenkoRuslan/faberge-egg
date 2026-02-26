@@ -1,6 +1,9 @@
 """Upsale campaign state machine and periodic processor.
 
-Lifecycle (see AGENTS.md plan for full diagram):
+Sends a series of upsale emails after a user purchases fractions of an asset.
+The funnel branches based on whether the user made additional purchases.
+
+Lifecycle (delays in ``_STEP_DELAYS``):
 
   Purchase ─(+4d)─> upsale1_pending ─[send]─> upsale1_sent ─(+7d check)─>
     ├─ purchased ─(+14d)─> upsale2_pending ─[send]─> upsale2_sent ─(+14d)─>
@@ -9,6 +12,17 @@ Lifecycle (see AGENTS.md plan for full diagram):
     └─ not bought ─> bonus_pending ─[send]─> bonus_sent ─(+7d)─>
           ├─ purchased ─(+30d)─> upsale3_pending ─[send]─> completed
           └─ no response ─> completed
+
+Integration points:
+  - ``settle_order_payment()`` calls ``create_campaign()`` / ``on_upsale_purchase()``
+  - Background asyncio task in ``app/main.py`` lifespan calls ``process_due_campaigns()``
+  - Admin API at ``/api/admin/campaigns`` for monitoring
+
+Configuration (env vars via ``app/config.py``):
+  - ``UPSALE_CAMPAIGN_ENABLED`` (default False) -- master switch
+  - ``UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS`` (default 300)
+  - ``UPSALE_CAMPAIGN_EXPIRE_DAYS`` (default 60)
+  - ``RESEND_TEMPLATE_UPSALE1``, ``_UPSALE2``, ``_UPSALE3``, ``_BONUS_UPSALE``
 """
 
 import logging
@@ -32,16 +46,19 @@ def _ensure_aware(dt: datetime | None) -> datetime | None:
     return dt
 
 
+# Delay from campaign creation / previous step completion to the next action.
+# For *_pending steps:  how long to wait before sending the email.
+# For *_sent steps:     how long to wait before checking if the user purchased.
 _STEP_DELAYS = {
-    "upsale1_pending": timedelta(days=4),
-    "upsale1_sent": timedelta(days=7),
-    "upsale2_pending": timedelta(days=14),
-    "upsale2_sent": timedelta(days=14),
-    "upsale2_reminder_pending": timedelta(days=0),
-    "upsale2_reminder_sent": timedelta(days=7),
-    "bonus_pending": timedelta(days=0),
-    "bonus_sent": timedelta(days=7),
-    "upsale3_pending": timedelta(days=30),
+    "upsale1_pending": timedelta(days=4),       # wait 4 days after purchase
+    "upsale1_sent": timedelta(days=7),           # check for response after 7 days
+    "upsale2_pending": timedelta(days=14),       # send upsale2 14 days after upsale1 purchase
+    "upsale2_sent": timedelta(days=14),          # check for response after 14 days
+    "upsale2_reminder_pending": timedelta(days=0),  # send reminder immediately
+    "upsale2_reminder_sent": timedelta(days=7),  # final check after 7 days
+    "bonus_pending": timedelta(days=0),          # send bonus immediately (user didn't buy upsale1)
+    "bonus_sent": timedelta(days=7),             # check for response after 7 days
+    "upsale3_pending": timedelta(days=30),       # send upsale3 30 days after previous purchase
 }
 
 
