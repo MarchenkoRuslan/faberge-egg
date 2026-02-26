@@ -1,25 +1,27 @@
 # Marketplace Backend (Python / FastAPI)
 
-REST API for a fractional marketplace with JWT auth, lots, orders, Stripe checkout, and PayKilla callbacks.
+REST API for a fractional marketplace with JWT auth, showrooms, assets, orders, Stripe checkout, and PayKilla callbacks.
 
 ## Features
 
 - JWT authentication with access + refresh tokens
 - Email verification and password reset by email
 - Current user profile endpoint (`/api/auth/me`)
-- Public lots API (`/api/lots`, `/api/lots/{id}`)
+- Public showrooms API (`/api/showrooms`, `/api/showrooms/{slug}`)
+- Public assets API (`/api/assets`, `/api/assets/{slug}`)
 - Authenticated orders API (`/api/orders`, `/api/orders/me`, `/api/orders/{id}/status`)
 - Payment methods endpoint (`/api/orders/payment-methods`)
 - Stripe checkout + webhook
-- PayKilla callback processing
-- Health endpoint (`/health`)
+- PayKilla callback processing (requires `PAYKILLA_IMPLEMENTED=true` when implemented)
+- Health endpoint (`/health`) with DB connectivity check (returns 503 if DB unavailable)
+- Admin API for upsale campaigns (`/api/admin/campaigns`)
 
 ## Project Layout
 
 - `app/main.py` - FastAPI app setup and router registration
-- `app/api/` - auth, lots, and orders endpoints
+- `app/api/` - auth, showrooms, assets, order, provenance, campaigns
 - `app/webhooks/` - Stripe and PayKilla webhook handlers
-- `app/services/` - payment and auth helpers
+- `app/services/` - payment, auth, storage, upsale campaign helpers
 - `app/models/` - SQLAlchemy models and DB wiring
 - `alembic/` - database migrations
 - `tests/` - automated tests
@@ -63,6 +65,9 @@ FRONTEND_URL=http://localhost:3000
 EMAIL_VERIFY_PATH=/verify-email
 PASSWORD_RESET_PATH=/restore-password
 
+# OPTIONAL: admin access (comma-separated emails; users in this list get admin rights)
+ADMIN_EMAILS=admin@example.com
+
 # OPTIONAL: Stripe (required only if Stripe payments are enabled)
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
@@ -70,8 +75,10 @@ STRIPE_SUCCESS_URL=http://localhost:3000/success
 STRIPE_CANCEL_URL=http://localhost:3000/cancel
 
 # OPTIONAL: PayKilla (required only if PayKilla payments are enabled)
+# PayKilla gateway stays disabled until create_payment is implemented; set PAYKILLA_IMPLEMENTED=true when ready.
 PAYKILLA_API_KEY=
 PAYKILLA_WEBHOOK_SECRET=
+PAYKILLA_IMPLEMENTED=false
 PAYKILLA_SUCCESS_URL=http://localhost:3000/success
 PAYKILLA_CANCEL_URL=http://localhost:3000/cancel
 
@@ -83,6 +90,30 @@ DB_CONNECT_RETRIES=10
 DB_CONNECT_RETRY_DELAY_SECONDS=1
 RUN_MIGRATIONS_ON_STARTUP=true
 RUN_SEED_ON_STARTUP=true
+
+# OPTIONAL: blockchain (when BLOCKCHAIN_ENABLED=true, WALLET_ENCRYPTION_KEY is required)
+BLOCKCHAIN_ENABLED=false
+WALLET_ENCRYPTION_KEY=
+BLOCKCHAIN_RPC_URL=
+BLOCKCHAIN_CONTRACT_ADDRESS=
+BLOCKCHAIN_EXPLORER_URL=
+
+# OPTIONAL: upsale campaigns (post-purchase email marketing)
+UPSALE_CAMPAIGN_ENABLED=false
+UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS=300
+UPSALE_CAMPAIGN_EXPIRE_DAYS=60
+RESEND_TEMPLATE_UPSALE1=
+RESEND_TEMPLATE_UPSALE2=
+RESEND_TEMPLATE_UPSALE3=
+RESEND_TEMPLATE_BONUS_UPSALE=
+
+# OPTIONAL: S3-compatible storage (Railway Bucket or AWS S3)
+S3_ENDPOINT=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
+S3_BUCKET=
+S3_REGION=auto
+PRESIGNED_URL_EXPIRES=3600
 ```
 
 ## Migrations
@@ -114,13 +145,15 @@ python -m app.db_tasks prepare
    - Required for email auth flows: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_TEMPLATE_VERIFY_EMAIL`, `RESEND_TEMPLATE_PASSWORD_RESET`
    - Resend sender domain must be verified; template variables: verify `CONFIRM_LINK`, `USER_NAME`; reset `RESET_LINK`, `USER_NAME`.
    - Rate limit for email endpoints: `RATE_LIMIT_EMAIL_REQUESTS` (default 5), `RATE_LIMIT_EMAIL_WINDOW_SECONDS` (default 900) — per IP.
+   - Optional: `ADMIN_EMAILS` for admin API access.
    - Optional: payment provider vars (Stripe/PayKilla) only when those methods are enabled.
+   - If `BLOCKCHAIN_ENABLED=true`, set `WALLET_ENCRYPTION_KEY`.
 4. Run DB prepare as a one-off/predeploy step (same `DATABASE_URL` and env vars):
    - `python -m app.db_tasks prepare`
 5. Deploy the web service using the normal start command (from `railway.json`).
 6. Verify startup:
-   - `GET /health` returns `200`
-   - logs contain `Application startup completed successfully.`
+   - `GET /health` returns `200` with `{"status":"ok","database":"ok"}`; returns `503` if DB unavailable.
+   - Logs contain `Application startup completed successfully.`
    - Railway Postgres service logs such as `connection reset by peer`, `invalid length of startup packet`,
      or `pg_stat_statements does not exist` can appear independently of app startup success.
 7. Configure provider webhooks:
@@ -134,10 +167,12 @@ python -m app.db_tasks prepare
 - ReDoc: `http://localhost:8000/redoc`
 - OpenAPI JSON: `http://localhost:8000/openapi.json`
 
-For protected endpoints, use `accessToken` from `POST /api/auth/login`.
+For protected endpoints, use `accessToken` from `POST /api/auth/login`. Admin endpoints require a user with `is_admin=true` or email in `ADMIN_EMAILS`.
 
 ## Running Tests
 
 ```bash
 pytest -q
 ```
+
+Tests use SQLite in-memory DB (no PostgreSQL required). See `tests/conftest.py`.
