@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models import Asset, Order
 from app.models.fraction_transfer import FractionTransfer
-from app.services.upsale_campaign_service import create_campaign, on_upsale_purchase
+from app.domains.campaigns.service import create_campaign, on_upsale_purchase
 from app.shared.blockchain_service import get_blockchain_service
 from app.shared.wallet_service import get_wallet_address
 

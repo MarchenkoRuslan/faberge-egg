@@ -21,7 +21,7 @@ from app.db_init import run_migrations, run_seed, wait_for_db
 from app.core.database import get_db
 from app.core.database import SessionLocal
 from app.shared.email_service import get_resend_startup_diagnostics
-from app.services.upsale_campaign_service import process_due_campaigns
+from app.domains.campaigns.service import process_due_campaigns
 from app.domains.payments.routers import paykilla_callback, stripe_webhook
 
 # Configure logging: flush after each record so logs appear immediately in Railway/containers
@@ -262,7 +262,6 @@ def _validate_wallet_encryption_key(errors: list[str]) -> None:
 def _append_s3_startup_diagnostics(warnings: list[str]) -> None:
     endpoint = settings.S3_ENDPOINT
     bucket = settings.S3_BUCKET
-    region = settings.S3_REGION
     has_key = bool(settings.S3_ACCESS_KEY_ID)
     has_secret = bool(settings.S3_SECRET_ACCESS_KEY)
     configured = bool(endpoint and bucket and has_key and has_secret)

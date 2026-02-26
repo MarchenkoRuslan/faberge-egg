@@ -31,7 +31,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - Settings/env: `app/core/config.py`.
 - DB init/seed: `app/db_init.py`.
 - CI: `.github/workflows/python-package.yml` (Python 3.11, `flake8`, `pytest -q`).
-- Architecture: domain-oriented. Core: `app/core/`. Domains: `app/domains/`. Shared: `app/shared/`. Models: `app/models/`.
+- Architecture: domain-oriented. Core: `app/core/`. Domains: `app/domains/`. Shared: `app/shared/`. Models: `app/models/`. Removed: `app/api`, `app/webhooks`, `app/schemas`, `app/utils`, `app/services`, `scripts`.
 
 ## Read-First Map (By Task Type)
 
@@ -65,7 +65,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
   - `tests/test_webhooks.py`
 - Upsale campaigns (post-purchase email marketing):
   - `app/models/upsale_campaign.py`
-  - `app/services/upsale_campaign_service.py`
+  - `app/domains/campaigns/` (router, schemas, service)
   - `app/shared/email_service.py` (send_upsale_email)
   - `app/domains/payments/payment_settlement.py` (_trigger_upsale_campaign)
   - `app/domains/campaigns/` (router, schemas)
@@ -100,12 +100,12 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 
 - Tests force SQLite in-memory DB via `tests/conftest.py` before app import.
 - Startup validation logic lives in `app/main.py` (database URL + required env checks).
-- `DATABASE_URL` is mandatory in normal runtime (see `app/config.py`).
+- `DATABASE_URL` is mandatory in normal runtime (see `app/core/config.py`).
 - `.env` is not auto-loaded in code; provide environment via process vars or `uvicorn --env-file .env`.
 - S3/storage config (`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, etc.) is optional; storage service degrades gracefully when not configured.
 - Seed creates showroom "latvian-treasure", asset "faberge-egg" (with commerce fields), and creates media records with storage keys under `latvian-treasure/faberge-egg/`.
 - The `lots` table has been merged into `assets`: all commerce fields (fractions, prices, is_active) now live directly on the Asset model.
-- **Upsale campaigns**: post-purchase email marketing funnel (4d→upsale1→7d check→upsale2/bonus→upsale3). State machine in `app/services/upsale_campaign_service.py`. Background asyncio-task in `lifespan()` processes due campaigns every N seconds. Triggered from `app/domains/payments/payment_settlement.py` (`settle_order_payment`). Gated by `UPSALE_CAMPAIGN_ENABLED` (default: False). Requires Resend template IDs: `RESEND_TEMPLATE_UPSALE1`, `_UPSALE2`, `_UPSALE3`, `_BONUS_UPSALE`. Admin API at `/api/admin/campaigns`. Tables: `upsale_campaigns`, `campaign_email_logs`.
+- **Upsale campaigns**: post-purchase email marketing funnel (4d→upsale1→7d check→upsale2/bonus→upsale3). State machine in `app/domains/campaigns/service.py`. Background asyncio-task in `lifespan()` processes due campaigns every N seconds. Triggered from `app/domains/payments/payment_settlement.py` (`settle_order_payment`). Gated by `UPSALE_CAMPAIGN_ENABLED` (default: False). Requires Resend template IDs: `RESEND_TEMPLATE_UPSALE1`, `_UPSALE2`, `_UPSALE3`, `_BONUS_UPSALE`. Admin API at `/api/admin/campaigns`. Tables: `upsale_campaigns`, `campaign_email_logs`.
 
 ## Cursor Cloud specific instructions
 

@@ -4,7 +4,7 @@ UpsaleCampaign tracks a single user's journey through the upsale funnel
 after purchasing fractions of an asset.  CampaignEmailLog is an append-only
 audit trail of every email sent (or failed) within a campaign.
 
-State machine steps (see ``app/services/upsale_campaign_service.py``):
+State machine steps (see ``app.domains.campaigns.service``):
 
     upsale1_pending  -> upsale1_sent  -> upsale2_pending | bonus_pending
     upsale2_pending  -> upsale2_sent  -> upsale3_pending | upsale2_reminder_pending

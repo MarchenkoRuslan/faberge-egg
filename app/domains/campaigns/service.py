@@ -15,10 +15,10 @@ Lifecycle (delays in ``_STEP_DELAYS``):
 
 Integration points:
   - ``settle_order_payment()`` calls ``create_campaign()`` / ``on_upsale_purchase()``
-  - Background asyncio task in ``app/main.py`` lifespan calls ``process_due_campaigns()``
+  - Background asyncio task in ``app.main.py`` lifespan calls ``process_due_campaigns()``
   - Admin API at ``/api/admin/campaigns`` for monitoring
 
-Configuration (env vars via ``app/config.py``):
+Configuration (env vars via ``app.core.config``):
   - ``UPSALE_CAMPAIGN_ENABLED`` (default False) -- master switch
   - ``UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS`` (default 300)
   - ``UPSALE_CAMPAIGN_EXPIRE_DAYS`` (default 60)

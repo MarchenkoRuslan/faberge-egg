@@ -11,7 +11,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-only")
 
 from app.models.order import Order  # noqa: E402
 from app.models.upsale_campaign import CampaignEmailLog, UpsaleCampaign  # noqa: E402
-from app.services.upsale_campaign_service import (  # noqa: E402
+from app.domains.campaigns.service import (  # noqa: E402
     create_campaign,
     on_upsale_purchase,
     process_due_campaigns,
@@ -42,7 +42,7 @@ def _make_order(db: Session, user_id: int, asset_id: int, status: str = "paid") 
 # ---------------------------------------------------------------------------
 
 
-@patch("app.services.upsale_campaign_service.settings")
+@patch("app.domains.campaigns.service.settings")
 def test_create_campaign_disabled(mock_settings, db, test_user, test_asset):
     mock_settings.UPSALE_CAMPAIGN_ENABLED = False
     order = _make_order(db, test_user.id, test_asset.id)
@@ -50,7 +50,7 @@ def test_create_campaign_disabled(mock_settings, db, test_user, test_asset):
     assert result is None
 
 
-@patch("app.services.upsale_campaign_service.settings")
+@patch("app.domains.campaigns.service.settings")
 def test_create_campaign_success(mock_settings, db, test_user, test_asset):
     mock_settings.UPSALE_CAMPAIGN_ENABLED = True
     mock_settings.UPSALE_CAMPAIGN_EXPIRE_DAYS = 60
@@ -71,7 +71,7 @@ def test_create_campaign_success(mock_settings, db, test_user, test_asset):
     assert expires > _utcnow()
 
 
-@patch("app.services.upsale_campaign_service.settings")
+@patch("app.domains.campaigns.service.settings")
 def test_create_campaign_idempotent(mock_settings, db, test_user, test_asset):
     mock_settings.UPSALE_CAMPAIGN_ENABLED = True
     mock_settings.UPSALE_CAMPAIGN_EXPIRE_DAYS = 60
@@ -94,7 +94,7 @@ def test_create_campaign_idempotent(mock_settings, db, test_user, test_asset):
 # ---------------------------------------------------------------------------
 
 
-@patch("app.services.upsale_campaign_service.settings")
+@patch("app.domains.campaigns.service.settings")
 def test_on_upsale_purchase_advances_upsale1_sent(mock_settings, db, test_user, test_asset):
     mock_settings.UPSALE_CAMPAIGN_ENABLED = True
     mock_settings.UPSALE_CAMPAIGN_EXPIRE_DAYS = 60
@@ -117,7 +117,7 @@ def test_on_upsale_purchase_advances_upsale1_sent(mock_settings, db, test_user, 
     assert campaign.upsale1_order_id == upsale_order.id
 
 
-@patch("app.services.upsale_campaign_service.settings")
+@patch("app.domains.campaigns.service.settings")
 def test_on_upsale_purchase_advances_bonus_sent(mock_settings, db, test_user, test_asset):
     mock_settings.UPSALE_CAMPAIGN_ENABLED = True
     mock_settings.UPSALE_CAMPAIGN_EXPIRE_DAYS = 60
@@ -150,8 +150,8 @@ def test_on_upsale_purchase_no_campaign(db, test_user, test_asset):
 # ---------------------------------------------------------------------------
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value=None)
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value=None)
 def test_process_upsale1_pending_does_not_advance_on_email_failure(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -175,8 +175,8 @@ def test_process_upsale1_pending_does_not_advance_on_email_failure(
     mock_send.assert_called_once()
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-id-123")
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-id-123")
 def test_process_upsale1_pending_sends_email(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -205,8 +205,8 @@ def test_process_upsale1_pending_sends_email(
     assert logs[0].resend_message_id == "msg-id-123"
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-id-456")
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-id-456")
 def test_process_upsale1_sent_no_purchase_goes_to_bonus(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -235,8 +235,8 @@ def test_process_upsale1_sent_no_purchase_goes_to_bonus(
     assert campaign.step == "bonus_pending"
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-id-789")
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-id-789")
 def test_process_upsale1_sent_with_purchase_goes_to_upsale2(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -269,8 +269,8 @@ def test_process_upsale1_sent_with_purchase_goes_to_upsale2(
     assert campaign.upsale1_order_id is not None
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-bonus")
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-bonus")
 def test_process_bonus_pending_sends_email(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -300,8 +300,8 @@ def test_process_bonus_pending_sends_email(
     mock_send.assert_called_once()
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-u3")
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-u3")
 def test_process_bonus_sent_no_purchase_completes(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -331,8 +331,8 @@ def test_process_bonus_sent_no_purchase_completes(
     assert campaign.status == "completed"
 
 
-@patch("app.services.upsale_campaign_service.settings")
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-u3")
+@patch("app.domains.campaigns.service.settings")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-u3")
 def test_process_upsale3_pending_completes(
     mock_send, mock_settings, db, test_user, test_asset,
 ):
@@ -395,7 +395,7 @@ def test_process_expired_campaign(db, test_user, test_asset):
 # ---------------------------------------------------------------------------
 
 
-@patch("app.services.upsale_campaign_service.send_upsale_email", return_value="msg-id")
+@patch("app.domains.campaigns.service.send_upsale_email", return_value="msg-id")
 def test_process_skips_future_campaigns(mock_send, db, test_user, test_asset):
     order = _make_order(db, test_user.id, test_asset.id)
     campaign = UpsaleCampaign(
