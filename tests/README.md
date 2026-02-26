@@ -10,7 +10,7 @@ pip install -r requirements.txt
 
 ### Full suite
 ```bash
-pytest
+pytest -q
 ```
 
 ### Verbose output
@@ -20,49 +20,62 @@ pytest -v
 
 ### With coverage report
 ```bash
-pytest --cov=app --cov-report=html
+pytest --cov=app --cov-report=html -q
 ```
 
 Open `htmlcov/index.html` in your browser to inspect coverage details.
 
 ### Single test file
 ```bash
-pytest tests/test_auth.py
+pytest tests/test_auth.py -q
 ```
 
 ### Single test case
 ```bash
-pytest tests/test_auth.py::test_register_success
+pytest tests/test_auth.py::test_register_success -q
 ```
 
 ### Fast subset (exclude integration tests)
 ```bash
-pytest -k "not integration"
+pytest -k "not integration" -q
 ```
 
 ## Test structure
 
-- `test_auth.py` - Authentication tests (register, login, JWT)
-- `test_lots.py` - Lots endpoints tests
-- `test_orders.py` - Orders endpoints tests
-- `test_webhooks.py` - Stripe and PayKilla webhook tests
-- `test_services.py` - Service-layer tests with mocks
+- `test_auth.py` - Auth (register, login, JWT, verify, password reset)
+- `test_blockchain_service.py` - Blockchain service
+- `test_database.py` - DB init, migrations, seed, db_tasks
 - `test_dependencies.py` - Auth dependency tests
-- `test_integration.py` - End-to-end integration flow tests
+- `test_email_service.py` - Resend email service
+- `test_health.py` - Health endpoint
+- `test_integration.py` - End-to-end integration flow
+- `test_lots.py` - Assets API (fractions, remaining_special_fractions)
+- `test_orders.py` - Orders endpoints
+- `test_provenance.py` - Fraction transfer provenance
+- `test_services.py` - Payment / service-layer tests with mocks
+- `test_showrooms.py` - Showrooms and assets catalog API
+- `test_startup_config.py` - Startup validation
+- `test_upsale_campaigns.py` - Upsale campaign state machine and admin API
+- `test_wallet_service.py` - Wallet service
+- `test_webhooks.py` - Stripe and PayKilla webhooks
 
-## Fixtures
+## Fixtures (conftest.py)
 
-- `client` - FastAPI `TestClient`
+- `client` - FastAPI TestClient
 - `db` - Test database (in-memory SQLite)
-- `test_user` - Primary test user
+- `test_user` - Primary test user (admin)
 - `test_user2` - Secondary test user
-- `test_lot` - Active test lot
-- `test_lot_inactive` - Inactive test lot
+- `test_user_non_admin` - User without admin privileges
+- `test_showroom` - Test showroom
+- `test_asset` - Active test asset
+- `test_asset_inactive` - Inactive test asset
+- `test_wallet`, `test_wallet2` - Blockchain wallets
+- `test_fraction_transfer` - Sample fraction transfer
 - `auth_token` - JWT for test user
 - `auth_headers` - Authorization headers
 
 ## Notes
 
-- Tests run against an isolated in-memory SQLite database.
-- External services (Stripe, PayKilla) are mocked.
-- Each test is executed in an isolated DB transaction.
+- Tests use isolated in-memory SQLite (no PostgreSQL required).
+- External services (Stripe, PayKilla, Resend) are mocked.
+- Each test runs in an isolated DB transaction.

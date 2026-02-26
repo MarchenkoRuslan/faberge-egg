@@ -38,6 +38,37 @@ class PaymentSettlementResult:
     remaining_fractions: int | None = None
 
 
+def log_settlement_result(result: PaymentSettlementResult, provider: str) -> None:
+    """Log settlement result for webhook handlers (Stripe, PayKilla)."""
+    status = result.status
+    if status == PaymentSettlementStatus.PAID:
+        logger.info("Order %s marked as paid, asset %s updated", result.order_id, result.asset_id)
+    elif status == PaymentSettlementStatus.ALREADY_PAID:
+        logger.info("Order %s already paid, skipping", result.order_id)
+    elif status == PaymentSettlementStatus.ORDER_NOT_FOUND:
+        logger.warning("Order %s not found", result.order_id)
+    elif status == PaymentSettlementStatus.ORDER_NOT_PENDING:
+        logger.warning("Order %s is not in pending status", result.order_id)
+    elif status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
+        logger.warning(
+            "Order %s payment method is %s, not %s",
+            result.order_id, result.actual_payment_method, provider,
+        )
+    elif status == PaymentSettlementStatus.AMOUNT_MISMATCH:
+        logger.warning(
+            "%s amount mismatch for order %s: expected=%s, received=%s",
+            provider.capitalize(), result.order_id,
+            result.expected_amount_cents, result.received_amount_cents,
+        )
+    elif status == PaymentSettlementStatus.ASSET_NOT_FOUND:
+        logger.error("Asset %s not found for order %s", result.asset_id, result.order_id)
+    elif status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
+        logger.warning(
+            "Cannot mark order %s as paid: %s fractions requested, %s remaining",
+            result.order_id, result.requested_fractions, result.remaining_fractions,
+        )
+
+
 def _rollback_and_result(db: Session, result: PaymentSettlementResult) -> PaymentSettlementResult:
     db.rollback()
     return result
@@ -49,10 +80,6 @@ def _load_order(db: Session, order_id: int) -> Order | None:
 
 def _load_asset(db: Session, asset_id: int) -> Asset | None:
     return db.query(Asset).filter(Asset.id == asset_id).with_for_update().first()
-
-
-def _remaining_special_fractions(asset: Asset) -> int:
-    return max(0, asset.special_price_fractions_cap - (asset.sold_special_fractions or 0))
 
 
 def _validate_order_for_settlement(
@@ -111,7 +138,7 @@ def _validate_asset_capacity(
     order: Order,
     asset: Asset,
 ) -> PaymentSettlementResult | None:
-    remaining = _remaining_special_fractions(asset)
+    remaining = asset.remaining_special_fractions
     if order.fraction_count > remaining:
         return _rollback_and_result(
             db,

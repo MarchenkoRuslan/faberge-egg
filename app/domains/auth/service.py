@@ -8,16 +8,13 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.time_utils import utc_now as utcnow
 from app.models import OneTimeToken, RefreshToken
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 ONE_TIME_PURPOSE_EMAIL_VERIFY = "email_verify"
 ONE_TIME_PURPOSE_PASSWORD_RESET = "password_reset"
-
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _as_utc(value: datetime) -> datetime:

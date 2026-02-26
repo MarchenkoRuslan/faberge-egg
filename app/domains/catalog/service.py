@@ -30,10 +30,6 @@ def media_to_response(media) -> AssetMediaResponse:
     )
 
 
-def remaining_special(asset: Asset) -> int:
-    return max(0, asset.special_price_fractions_cap - (asset.sold_special_fractions or 0))
-
-
 def asset_to_list(asset: Asset) -> AssetListResponse:
     hero = next((m for m in asset.media if m.kind == "hero"), None)
     return AssetListResponse(
@@ -44,7 +40,7 @@ def asset_to_list(asset: Asset) -> AssetListResponse:
         hero_image=media_to_response(hero) if hero else None,
         total_fractions=asset.total_fractions,
         special_price_fractions_cap=asset.special_price_fractions_cap,
-        remaining_special_fractions=remaining_special(asset),
+        remaining_special_fractions=asset.remaining_special_fractions,
         price_special_eur=asset.price_special_eur,
         price_nominal_eur=asset.price_nominal_eur,
         min_fractions_to_buy=settings.MIN_FRACTIONS,
@@ -64,7 +60,7 @@ def asset_to_detail(asset: Asset) -> AssetDetailResponse:
         media=media_list,
         total_fractions=asset.total_fractions,
         special_price_fractions_cap=asset.special_price_fractions_cap,
-        remaining_special_fractions=remaining_special(asset),
+        remaining_special_fractions=asset.remaining_special_fractions,
         price_special_eur=asset.price_special_eur,
         price_nominal_eur=asset.price_nominal_eur,
         min_fractions_to_buy=settings.MIN_FRACTIONS,

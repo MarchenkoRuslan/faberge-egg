@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.domains.payments.payment_settlement import (
+    log_settlement_result,
     PaymentSettlementResult,
     PaymentSettlementStatus,
     settle_order_payment,
@@ -72,31 +73,6 @@ def _validate_stripe_currency(session: dict) -> bool:
     return not currency or str(currency).lower() == "eur"
 
 
-def _log_stripe_settlement_result(result: PaymentSettlementResult) -> None:
-    if result.status == PaymentSettlementStatus.PAID:
-        logger.info("Order %s marked as paid, asset %s updated", result.order_id, result.asset_id)
-    elif result.status == PaymentSettlementStatus.ALREADY_PAID:
-        logger.info("Order %s already paid, skipping", result.order_id)
-    elif result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
-        logger.warning("Order %s not found", result.order_id)
-    elif result.status == PaymentSettlementStatus.ORDER_NOT_PENDING:
-        logger.warning("Order %s is not in pending status", result.order_id)
-    elif result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
-        logger.warning("Order %s payment method is %s, not stripe", result.order_id, result.actual_payment_method)
-    elif result.status == PaymentSettlementStatus.AMOUNT_MISMATCH:
-        logger.warning(
-            "Stripe amount mismatch for order %s: expected=%s, received=%s",
-            result.order_id, result.expected_amount_cents, result.received_amount_cents,
-        )
-    elif result.status == PaymentSettlementStatus.ASSET_NOT_FOUND:
-        logger.error("Asset %s not found for order %s", result.asset_id, result.order_id)
-    elif result.status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
-        logger.warning(
-            "Cannot mark order %s as paid: %s fractions requested, %s remaining",
-            result.order_id, result.requested_fractions, result.remaining_fractions,
-        )
-
-
 def _handle_checkout_session_completed(session: dict, db: Session) -> None:
     order_id = _parse_stripe_order_id(session)
     if order_id is None:
@@ -119,7 +95,7 @@ def _handle_checkout_session_completed(session: dict, db: Session) -> None:
     except Exception as exc:
         logger.error("Error processing order %s: %s", order_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error") from exc
-    _log_stripe_settlement_result(result)
+    log_settlement_result(result, "stripe")
 
 
 @router.post("/stripe", summary="Stripe webhook")

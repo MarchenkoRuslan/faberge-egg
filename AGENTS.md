@@ -37,6 +37,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 
 - Startup/env/runtime validation:
   - `app/core/config.py`
+  - `app/core/time_utils.py` (utc_now)
   - `app/main.py`
   - `tests/test_startup_config.py`
 - Auth/JWT/dependencies:

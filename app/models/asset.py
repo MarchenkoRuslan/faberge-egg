@@ -44,3 +44,8 @@ class Asset(Base):
         back_populates="asset",
         order_by="AssetMedia.sort_order",
     )
+
+    @property
+    def remaining_special_fractions(self) -> int:
+        """How many special-price fractions are still available."""
+        return max(0, self.special_price_fractions_cap - (self.sold_special_fractions or 0))

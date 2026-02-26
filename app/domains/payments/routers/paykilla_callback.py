@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.domains.payments.payment_settlement import (
+    log_settlement_result,
     PaymentSettlementResult,
     PaymentSettlementStatus,
     settle_order_payment,
@@ -87,46 +88,6 @@ def _parse_optional_amount(body: dict) -> int | None:
     return _parse_positive_int(body.get("amount_eur_cents"), field_name="amount_eur_cents")
 
 
-def _log_paykilla_settlement_result(result: PaymentSettlementResult) -> None:
-    if result.status == PaymentSettlementStatus.PAID:
-        logger.info("Order %s marked as paid, asset %s updated", result.order_id, result.asset_id)
-        return
-    if result.status == PaymentSettlementStatus.ALREADY_PAID:
-        logger.info("Order %s already paid, skipping", result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
-        logger.warning("Order %s not found", result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.ORDER_NOT_PENDING:
-        logger.warning("Order %s is not in pending status", result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
-        logger.warning(
-            "Order %s payment method is %s, not paykilla",
-            result.order_id,
-            result.actual_payment_method,
-        )
-        return
-    if result.status == PaymentSettlementStatus.AMOUNT_MISMATCH:
-        logger.warning(
-            "PayKilla amount mismatch for order %s: expected=%s, received=%s",
-            result.order_id,
-            result.expected_amount_cents,
-            result.received_amount_cents,
-        )
-        return
-    if result.status == PaymentSettlementStatus.ASSET_NOT_FOUND:
-        logger.error("Asset %s not found for order %s", result.asset_id, result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
-        logger.warning(
-            "Cannot mark order %s as paid: %s fractions requested, %s remaining",
-            result.order_id,
-            result.requested_fractions,
-            result.remaining_fractions,
-        )
-
-
 @router.post(
     "/paykilla",
     summary="PayKilla webhook/callback",
@@ -167,6 +128,6 @@ async def paykilla_webhook(
         logger.error("Error processing order %s: %s", order_id, exc, exc_info=True)
         return {"received": True}
 
-    _log_paykilla_settlement_result(result)
+    log_settlement_result(result, "paykilla")
 
     return {"received": True}

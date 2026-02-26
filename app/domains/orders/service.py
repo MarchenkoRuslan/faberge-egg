@@ -31,8 +31,7 @@ def get_payment_gateway_or_raise(payment_method: str) -> PaymentGateway:
     return gateway
 
 
-def get_active_asset_or_raise(db, asset_id: int) -> Asset:
-    from sqlalchemy.orm import Session
+def get_active_asset_or_raise(db: Session, asset_id: int) -> Asset:
     asset = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.is_active.is_(True),
@@ -43,12 +42,8 @@ def get_active_asset_or_raise(db, asset_id: int) -> Asset:
     return asset
 
 
-def remaining_special_fractions(asset: Asset) -> int:
-    return max(0, asset.special_price_fractions_cap - (asset.sold_special_fractions or 0))
-
-
 def validate_fraction_count_or_raise(fraction_count: int, asset: Asset) -> None:
-    remaining = remaining_special_fractions(asset)
+    remaining = asset.remaining_special_fractions
     min_f = settings.MIN_FRACTIONS
     if fraction_count < min_f:
         raise HTTPException(

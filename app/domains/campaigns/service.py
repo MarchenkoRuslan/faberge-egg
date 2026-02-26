@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.time_utils import utc_now
 from app.models.order import Order
 from app.models.upsale_campaign import CampaignEmailLog, UpsaleCampaign
 from app.models.user import User
@@ -60,10 +61,6 @@ _STEP_DELAYS = {
     "bonus_sent": timedelta(days=7),             # check for response after 7 days
     "upsale3_pending": timedelta(days=30),       # send upsale3 30 days after previous purchase
 }
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _build_buy_link(asset_id: int) -> str:
@@ -166,13 +163,13 @@ def _send_campaign_email(
 
 def _advance(campaign: UpsaleCampaign, step: str, delay: timedelta) -> None:
     campaign.step = step
-    campaign.next_action_at = _now() + delay
+    campaign.next_action_at = utc_now() + delay
 
 
 def _complete(campaign: UpsaleCampaign) -> None:
     campaign.step = "completed"
     campaign.status = "completed"
-    campaign.next_action_at = _now()
+    campaign.next_action_at = utc_now()
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +178,9 @@ def _complete(campaign: UpsaleCampaign) -> None:
 
 def _handle_upsale1_pending(db: Session, c: UpsaleCampaign) -> None:
     if not _send_campaign_email(db, campaign=c, email_type="upsale1"):
-        c.next_action_at = _now() + timedelta(minutes=5)
+        c.next_action_at = utc_now() + timedelta(minutes=5)
         return
-    c.upsale1_sent_at = _now()
+    c.upsale1_sent_at = utc_now()
     _advance(c, "upsale1_sent", _STEP_DELAYS["upsale1_sent"])
 
 
@@ -202,9 +199,9 @@ def _handle_upsale1_sent(db: Session, c: UpsaleCampaign) -> None:
 
 def _handle_upsale2_pending(db: Session, c: UpsaleCampaign) -> None:
     if not _send_campaign_email(db, campaign=c, email_type="upsale2"):
-        c.next_action_at = _now() + timedelta(minutes=5)
+        c.next_action_at = utc_now() + timedelta(minutes=5)
         return
-    c.upsale2_sent_at = _now()
+    c.upsale2_sent_at = utc_now()
     _advance(c, "upsale2_sent", _STEP_DELAYS["upsale2_sent"])
 
 
@@ -223,9 +220,9 @@ def _handle_upsale2_sent(db: Session, c: UpsaleCampaign) -> None:
 
 def _handle_upsale2_reminder_pending(db: Session, c: UpsaleCampaign) -> None:
     if not _send_campaign_email(db, campaign=c, email_type="upsale2_reminder"):
-        c.next_action_at = _now() + timedelta(minutes=5)
+        c.next_action_at = utc_now() + timedelta(minutes=5)
         return
-    c.upsale2_reminder_sent_at = _now()
+    c.upsale2_reminder_sent_at = utc_now()
     _advance(c, "upsale2_reminder_sent", _STEP_DELAYS["upsale2_reminder_sent"])
 
 
@@ -242,9 +239,9 @@ def _handle_upsale2_reminder_sent(db: Session, c: UpsaleCampaign) -> None:
 
 def _handle_bonus_pending(db: Session, c: UpsaleCampaign) -> None:
     if not _send_campaign_email(db, campaign=c, email_type="bonus"):
-        c.next_action_at = _now() + timedelta(minutes=5)
+        c.next_action_at = utc_now() + timedelta(minutes=5)
         return
-    c.bonus_sent_at = _now()
+    c.bonus_sent_at = utc_now()
     _advance(c, "bonus_sent", _STEP_DELAYS["bonus_sent"])
 
 
@@ -263,9 +260,9 @@ def _handle_bonus_sent(db: Session, c: UpsaleCampaign) -> None:
 
 def _handle_upsale3_pending(db: Session, c: UpsaleCampaign) -> None:
     if not _send_campaign_email(db, campaign=c, email_type="upsale3"):
-        c.next_action_at = _now() + timedelta(minutes=5)
+        c.next_action_at = utc_now() + timedelta(minutes=5)
         return
-    c.upsale3_sent_at = _now()
+    c.upsale3_sent_at = utc_now()
     _complete(c)
 
 
@@ -311,7 +308,7 @@ def create_campaign(db: Session, order: Order) -> UpsaleCampaign | None:
         )
         return None
 
-    now = _now()
+    now = utc_now()
     campaign = UpsaleCampaign(
         original_order_id=order.id,
         user_id=order.user_id,
@@ -383,7 +380,7 @@ def process_due_campaigns(db: Session) -> int:
 
     Returns the number of campaigns processed.
     """
-    now = _now()
+    now = utc_now()
     campaigns = (
         db.query(UpsaleCampaign)
         .filter(

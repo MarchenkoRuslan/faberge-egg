@@ -10,11 +10,10 @@ Docs: https://resend.com/docs/send-with-python
 Templates: https://resend.com/docs/dashboard/templates/introduction
 """
 import logging
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-
 import resend
 
 from app.core.config import settings
+from app.shared.url_utils import append_query_param
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +59,7 @@ def _get_upsale_template_map() -> dict[str, str]:
 
 def _build_frontend_link(path: str, token: str) -> str:
     base = f"{settings.FRONTEND_URL.rstrip('/')}/{path.lstrip('/')}"
-    parsed = urlparse(base)
-    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query["token"] = token
-    return urlunparse(parsed._replace(query=urlencode(query)))
+    return append_query_param(base, "token", token)
 
 
 def _resend_required_config() -> tuple[str, str]:
