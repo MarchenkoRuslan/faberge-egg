@@ -1,5 +1,10 @@
-from app.schemas.showrooms import AssetListResponse, AssetDetailResponse
-from app.schemas.orders import OrderCreateRequest, OrderCreateResponse, OrderResponse, OrderStatusResponse
+from app.domains.catalog.schemas import AssetListResponse, AssetDetailResponse
+from app.domains.orders.schemas import (
+    OrderCreateRequest,
+    OrderCreateResponse,
+    OrderResponse,
+    OrderStatusResponse,
+)
 
 __all__ = [
     "AssetListResponse",

@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import db_tasks
 from app.db_init import init_db, prepare_database, run_seed, seed_showroom_and_asset, wait_for_db
-from app.models.database import _normalize_database_url
+from app.core.database import _normalize_database_url
 from app.models.showroom import Showroom
 
 

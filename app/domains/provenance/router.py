@@ -3,37 +3,18 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.models import Asset, get_db
+from app.core.database import get_db
+from app.models import Asset
 from app.models.blockchain_wallet import BlockchainWallet
 from app.models.fraction_transfer import FractionTransfer
-from app.schemas.provenance import ProvenanceEntry, ProvenanceResponse
+from app.models.user import User
+from app.domains.provenance.schemas import ProvenanceEntry, ProvenanceResponse
+from app.domains.provenance.service import resolve_display_name
 
 router = APIRouter()
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
-
-
-def _mask_address(address: str) -> str:
-    if len(address) <= 10:
-        return address
-    return address[:6] + "..." + address[-4:]
-
-
-def _resolve_display_name(
-    user_id: int | None,
-    display_names: dict[int, str | None],
-    wallet_addresses: dict[int, str],
-) -> str | None:
-    if user_id is None:
-        return None
-    name = display_names.get(user_id)
-    if name:
-        return name
-    address = wallet_addresses.get(user_id)
-    if address:
-        return _mask_address(address)
-    return f"user#{user_id}"
 
 
 @router.get(
@@ -76,7 +57,6 @@ def get_asset_provenance(
             user_ids.add(t.from_user_id)
         user_ids.add(t.to_user_id)
 
-    from app.models.user import User
     users = db.query(User.id, User.display_name).filter(User.id.in_(user_ids)).all()
     display_names: dict[int, str | None] = {u.id: u.display_name for u in users}
 
@@ -92,10 +72,10 @@ def get_asset_provenance(
             id=t.id,
             transfer_type=t.transfer_type,
             fraction_count=t.fraction_count,
-            from_display=_resolve_display_name(
+            from_display=resolve_display_name(
                 t.from_user_id, display_names, wallet_addresses,
             ),
-            to_display=_resolve_display_name(
+            to_display=resolve_display_name(
                 t.to_user_id, display_names, wallet_addresses,
             ) or f"user#{t.to_user_id}",
             blockchain_tx_hash=t.blockchain_tx_hash,

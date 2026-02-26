@@ -13,7 +13,7 @@ from app.main import (
     _validate_database_url_for_runtime,
     _validate_required_env_for_runtime,
 )
-from app.services.email_service import get_resend_startup_diagnostics
+from app.shared.email_service import get_resend_startup_diagnostics
 
 
 def test_validate_database_url_allows_localhost_outside_railway(monkeypatch):

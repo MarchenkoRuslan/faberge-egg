@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from typing import Callable
 
-from app.config import settings
-from app.services import paykilla_service, stripe_service
+from app.core.config import settings
+
+from app.domains.payments import stripe_service, paykilla_service
 
 
 @dataclass(frozen=True)

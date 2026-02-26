@@ -1,24 +1,14 @@
-"""Admin endpoints for monitoring and managing upsale email campaigns.
-
-Mounted at ``/api/admin/campaigns``.  All endpoints require JWT auth.
-
-- ``GET  /campaigns``             -- list campaigns (filter by status, user_id)
-- ``GET  /campaigns/{id}``        -- campaign detail with email log
-- ``POST /campaigns/{id}/cancel`` -- cancel an active campaign
-"""
-
+"""Admin endpoints for monitoring and managing upsale email campaigns."""
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_admin_user
-from app.models import User, get_db
+from app.core.database import get_db
+from app.core.dependencies import get_admin_user
+from app.models import User
 from app.models.upsale_campaign import UpsaleCampaign
-from app.schemas.campaigns import (
-    CampaignDetailResponse,
-    CampaignResponse,
-)
+from app.domains.campaigns.schemas import CampaignDetailResponse, CampaignResponse
 
 router = APIRouter()
 

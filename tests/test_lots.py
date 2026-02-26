@@ -3,7 +3,7 @@ from unittest.mock import patch
 from fastapi import status
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_list_assets_empty(mock_presign, client):
     """Test listing assets when none exist."""
     response = client.get("/api/assets")
@@ -11,7 +11,7 @@ def test_list_assets_empty(mock_presign, client):
     assert response.json() == []
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_list_assets_success(mock_presign, client, test_asset):
     """Test listing active assets."""
     response = client.get("/api/assets")
@@ -30,7 +30,7 @@ def test_list_assets_success(mock_presign, client, test_asset):
     assert asset_data["is_active"] is True
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_list_assets_excludes_inactive(mock_presign, client, test_asset, test_asset_inactive):
     """Test that inactive assets are not returned."""
     response = client.get("/api/assets")
@@ -41,7 +41,7 @@ def test_list_assets_excludes_inactive(mock_presign, client, test_asset, test_as
     assert data[0]["is_active"] is True
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_list_assets_remaining_calculation(mock_presign, client, db, test_asset):
     """Test calculation of remaining special fractions."""
     test_asset.sold_special_fractions = 500_000
@@ -53,7 +53,7 @@ def test_list_assets_remaining_calculation(mock_presign, client, db, test_asset)
     assert data[0]["remaining_special_fractions"] == 2_500_000
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_list_assets_remaining_never_negative(mock_presign, client, db, test_asset):
     """Test that remaining fractions never go negative."""
     test_asset.sold_special_fractions = 5_000_000
@@ -65,7 +65,7 @@ def test_list_assets_remaining_never_negative(mock_presign, client, db, test_ass
     assert data[0]["remaining_special_fractions"] == 0
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_asset_by_slug_success(mock_presign, client, test_asset):
     """Test getting an asset by slug."""
     response = client.get(f"/api/assets/{test_asset.slug}")
@@ -91,7 +91,7 @@ def test_get_asset_by_slug_not_found(client):
     assert "not found" in response.json()["detail"].lower()
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_asset_remaining_calculation(mock_presign, client, db, test_asset):
     """Test remaining fractions calculation in get asset."""
     test_asset.sold_special_fractions = 1_000_000
@@ -103,7 +103,7 @@ def test_get_asset_remaining_calculation(mock_presign, client, db, test_asset):
     assert data["remaining_special_fractions"] == 2_000_000
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_asset_all_fields(mock_presign, client, test_asset):
     """Test that all required fields are present in response."""
     response = client.get(f"/api/assets/{test_asset.slug}")

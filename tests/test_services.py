@@ -3,12 +3,12 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from app.services import paykilla_service, stripe_service
+from app.domains.payments import paykilla_service, stripe_service
 
 
 def test_stripe_create_checkout_session_success():
     """Test successful Stripe checkout session creation."""
-    with patch("app.services.stripe_service.stripe") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe") as mock_stripe:
         mock_session = MagicMock()
         mock_session.url = "https://checkout.stripe.com/test"
         mock_session.id = "cs_test_123"
@@ -57,7 +57,7 @@ def test_stripe_create_checkout_session_no_secret():
 
 def test_stripe_create_checkout_session_parameters():
     """Test that correct parameters are passed to Stripe API."""
-    with patch("app.services.stripe_service.stripe") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe") as mock_stripe:
         mock_session = MagicMock()
         mock_session.url = "https://checkout.stripe.com/test"
         mock_session.id = "cs_test_123"
@@ -93,7 +93,7 @@ def test_stripe_create_checkout_session_parameters():
 
 def test_stripe_create_checkout_session_preserves_existing_query_params():
     """Test that Stripe success_url keeps existing query params and appends order_id."""
-    with patch("app.services.stripe_service.stripe") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe") as mock_stripe:
         mock_session = MagicMock()
         mock_session.url = "https://checkout.stripe.com/test"
         mock_session.id = "cs_test_123"

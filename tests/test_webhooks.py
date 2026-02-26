@@ -661,7 +661,7 @@ def test_paykilla_webhook_non_positive_amount_returns_400(client, test_user, tes
 
 def test_paykilla_webhook_non_positive_order_id_with_valid_signature(client):
     """PayKilla callback should return 400 for non-positive order_id with valid signature."""
-    from app.config import settings
+    from app.core.config import settings
 
     payload = json.dumps({"order_id": 0}).encode()
     signature = hmac.new(

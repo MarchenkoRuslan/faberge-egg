@@ -1,6 +1,6 @@
 # PayKilla integration - placeholder; real implementation in paykilla todo
 
-from app.services.url_utils import append_query_param, validate_redirect_url
+from app.shared.url_utils import append_query_param, validate_redirect_url
 
 
 def create_payment(
@@ -10,7 +10,7 @@ def create_payment(
     cancel_url: str,
 ) -> str:
     """Create PayKilla payment and return checkout URL. Placeholder returns success_url with order_id."""
-    from app.config import settings
+    from app.core.config import settings
 
     if not settings.PAYKILLA_API_KEY:
         raise ValueError("PAYKILLA_API_KEY is not set")

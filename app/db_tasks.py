@@ -4,7 +4,7 @@ import sys
 from collections.abc import Sequence
 
 from app.db_init import prepare_database, run_migrations, run_seed, wait_for_db
-from app.config import settings
+from app.core.config import settings
 
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 logger = logging.getLogger("app.db_tasks")

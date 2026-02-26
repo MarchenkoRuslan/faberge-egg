@@ -2,13 +2,13 @@ import logging
 
 import pytest
 
-from app.services import email_service
-from app.services.email_service import (
+from app.shared import email_service
+from app.shared.email_service import (
     VAR_CONFIRM_LINK,
     VAR_RESET_LINK,
     VAR_USER_NAME,
 )
-from app.utils.redaction import mask_email
+from app.shared.utils.redaction import mask_email
 
 
 def _set_resend_env(monkeypatch, template_verify: str = "tpl_verify", template_reset: str = "tpl_reset"):

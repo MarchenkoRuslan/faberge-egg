@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.blockchain_wallet import BlockchainWallet
-from app.services.blockchain_service import reset_blockchain_service
-from app.services.wallet_service import (
+from app.shared.blockchain_service import reset_blockchain_service
+from app.shared.wallet_service import (
     create_user_wallet,
     decrypt_wallet_private_key,
     ensure_both_have_wallets,

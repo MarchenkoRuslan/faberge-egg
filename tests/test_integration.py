@@ -11,7 +11,7 @@ from app.models.order import Order
 def test_full_order_flow(client, db, test_asset):
     """Test complete flow: register -> login -> get assets -> create order -> webhook."""
     # 1. Register user
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         register_response = client.post(
             "/api/auth/register",
             json={
@@ -39,7 +39,7 @@ def test_full_order_flow(client, db, test_asset):
     headers = {"Authorization": f"Bearer {token}"}
 
     # 3. Get list of assets
-    with patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg"):
+    with patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg"):
         assets_response = client.get("/api/assets", headers=headers)
     assert assets_response.status_code == status.HTTP_200_OK
     assets = assets_response.json()
@@ -47,7 +47,7 @@ def test_full_order_flow(client, db, test_asset):
     assert assets[0]["id"] == test_asset.id
 
     # 4. Create order
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -120,7 +120,7 @@ def test_full_order_flow(client, db, test_asset):
 
 def test_price_calculation_precision(client, db, test_asset, auth_headers):
     """Test that price calculation uses Decimal for precision."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -154,7 +154,7 @@ def test_price_calculation_precision(client, db, test_asset, auth_headers):
 
 def test_multiple_orders_same_asset(client, db, test_asset, auth_headers):
     """Test creating multiple orders for the same asset."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -213,7 +213,7 @@ def test_multiple_orders_same_asset(client, db, test_asset, auth_headers):
 
 def test_order_flow_with_paykilla(client, db, test_asset, auth_headers):
     """Test complete flow with PayKilla payment."""
-    with patch("app.services.paykilla_service.create_payment") as mock_paykilla:
+    with patch("app.domains.payments.paykilla_service.create_payment") as mock_paykilla:
         mock_paykilla.return_value = "https://paykilla.com/checkout?order_id=1"
 
         order_response = client.post(

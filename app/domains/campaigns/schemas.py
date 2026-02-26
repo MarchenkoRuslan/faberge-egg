@@ -1,10 +1,4 @@
-"""Pydantic response schemas for upsale campaign admin API.
-
-CampaignResponse -- list/cancel view (no email log).
-CampaignDetailResponse -- single campaign with full email log.
-CampaignEmailLogResponse -- one row from campaign_email_logs.
-"""
-
+"""Pydantic response schemas for upsale campaign admin API."""
 from datetime import datetime
 
 from pydantic import BaseModel

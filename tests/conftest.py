@@ -36,7 +36,7 @@ TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_eng
 @pytest.fixture(scope="function")
 def db() -> Generator[Session, None, None]:
     """Create a fresh database for each test."""
-    from app.models.database import Base
+    from app.core.database import Base
 
     Base.metadata.create_all(bind=test_engine)
     db_session = TestSessionLocal()
@@ -51,7 +51,7 @@ def db() -> Generator[Session, None, None]:
 def client(db: Session) -> Generator[TestClient, None, None]:
     """Create a test client with database override."""
     from app.main import app
-    from app.models.database import get_db
+    from app.core.database import get_db
 
     def override_get_db():
         try:
@@ -67,7 +67,7 @@ def client(db: Session) -> Generator[TestClient, None, None]:
 @pytest.fixture
 def test_user(db: Session):
     """Create a test user."""
-    from app.api.auth import get_password_hash
+    from app.domains.auth.service import get_password_hash
     from app.models.user import User
 
     user = User(
@@ -88,7 +88,7 @@ def test_user(db: Session):
 @pytest.fixture
 def test_user_non_admin(db: Session):
     """Create a test user without admin privileges."""
-    from app.api.auth import get_password_hash
+    from app.domains.auth.service import get_password_hash
     from app.models.user import User
 
     user = User(
@@ -109,7 +109,7 @@ def test_user_non_admin(db: Session):
 @pytest.fixture
 def test_user2(db: Session):
     """Create a second test user."""
-    from app.api.auth import get_password_hash
+    from app.domains.auth.service import get_password_hash
     from app.models.user import User
 
     user = User(

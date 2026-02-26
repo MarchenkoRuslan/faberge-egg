@@ -4,9 +4,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.config import settings
+from app.core.config import settings
 from app.models import Base  # noqa: F401
-from app.models.database import _normalize_database_url
+from app.core.database import _normalize_database_url
 
 config = context.config
 

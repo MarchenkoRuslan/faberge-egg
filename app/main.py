@@ -11,14 +11,18 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.api import assets, auth, campaigns, order, provenance, showrooms
-from app.config import settings
+from app.domains.orders.router import router as orders_router
+from app.domains.provenance.router import router as provenance_router
+from app.domains.campaigns.router import router as campaigns_router
+from app.domains.catalog.router import assets_router, showrooms_router
+from app.domains.auth.router import router as auth_router
+from app.core.config import settings
 from app.db_init import run_migrations, run_seed, wait_for_db
-from app.models import get_db
-from app.models.database import SessionLocal
-from app.services.email_service import get_resend_startup_diagnostics
+from app.core.database import get_db
+from app.core.database import SessionLocal
+from app.shared.email_service import get_resend_startup_diagnostics
 from app.services.upsale_campaign_service import process_due_campaigns
-from app.webhooks import paykilla_callback, stripe_webhook
+from app.domains.payments.routers import paykilla_callback, stripe_webhook
 
 # Configure logging: flush after each record so logs appear immediately in Railway/containers
 _log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -432,12 +436,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(showrooms.router, prefix="/api/showrooms", tags=["Showrooms"])
-app.include_router(assets.router, prefix="/api/assets", tags=["Assets"])
-app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-app.include_router(order.router, prefix="/api/orders", tags=["Orders"])
-app.include_router(provenance.router, prefix="/api/assets", tags=["Provenance"])
-app.include_router(campaigns.router, prefix="/api/admin", tags=["Campaigns"])
+app.include_router(showrooms_router, prefix="/api/showrooms", tags=["Showrooms"])
+app.include_router(assets_router, prefix="/api/assets", tags=["Assets"])
+app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
+app.include_router(orders_router, prefix="/api/orders", tags=["Orders"])
+app.include_router(provenance_router, prefix="/api/assets", tags=["Provenance"])
+app.include_router(campaigns_router, prefix="/api/admin", tags=["Campaigns"])
 app.include_router(stripe_webhook.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(paykilla_callback.router, prefix="/webhooks", tags=["Webhooks"])
 

@@ -8,7 +8,7 @@ import time
 from collections import defaultdict
 from fastapi import Request
 
-from app.config import settings
+from app.core.config import settings
 
 
 def _sliding_window_check(

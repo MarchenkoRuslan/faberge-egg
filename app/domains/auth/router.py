@@ -1,165 +1,54 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from jose import jwt
-from passlib.context import CryptContext
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.dependencies import get_current_user
-from app.models import User, get_db
-from app.services.auth_tokens import (
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.core.rate_limit import require_email_rate_limit
+from app.domains.auth.schemas import (
+    EmailVerifyConfirmRequest,
+    EmailVerifyRequest,
+    LoginRequest,
+    LogoutRequest,
+    MeResponse,
+    MessageResponse,
+    PasswordForgotRequest,
+    PasswordResetRequest,
+    RefreshRequest,
+    RegisterRequest,
+    RegisterResponse,
+    TokenResponse,
+    TokenValidateRequest,
+    TokenValidateResponse,
+)
+from app.domains.auth.service import (
     ONE_TIME_PURPOSE_EMAIL_VERIFY,
     ONE_TIME_PURPOSE_PASSWORD_RESET,
     consume_one_time_token,
+    create_access_token,
     get_latest_one_time_token,
+    get_password_hash,
     issue_one_time_token,
     issue_refresh_token,
     revoke_all_refresh_tokens_for_user,
     revoke_refresh_token_by_raw,
     rotate_refresh_token,
+    to_utc,
     utcnow,
     validate_one_time_token,
+    verify_password,
 )
-from app.rate_limit import require_email_rate_limit
-from app.services.email_service import send_password_reset_email, send_verify_email
-from app.services.wallet_service import create_user_wallet
-from app.utils.redaction import mask_email
+from app.models import User
+from app.shared.email_service import send_password_reset_email, send_verify_email
+from app.shared.utils.redaction import mask_email
+from app.shared.wallet_service import create_user_wallet
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 logger = logging.getLogger(__name__)
-
-
-class AuthSchema(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class RegisterRequest(AuthSchema):
-    display_name: str = Field(alias="displayName", min_length=1, max_length=255)
-    email: EmailStr
-    password: str
-    confirm_password: str = Field(alias="confirmPassword")
-    terms_agree: bool = Field(alias="termsAgree")
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        return v
-
-    @model_validator(mode="after")
-    def validate_registration(self) -> "RegisterRequest":
-        if self.password != self.confirm_password:
-            raise ValueError("Password confirmation does not match")
-        if not self.terms_agree:
-            raise ValueError("You must accept Terms of Use")
-        return self
-
-
-class RegisterResponse(AuthSchema):
-    id: int
-    email: str
-    display_name: str | None = Field(default=None, alias="displayName")
-    is_email_verified: bool = Field(alias="isEmailVerified")
-    requires_email_verification: bool = Field(alias="requiresEmailVerification")
-
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-
-class LoginRequest(AuthSchema):
-    email: EmailStr
-    password: str
-
-    model_config = ConfigDict(
-        json_schema_extra={"examples": [{"email": "user@example.com", "password": "securepassword"}]},
-        populate_by_name=True,
-    )
-
-
-class TokenResponse(AuthSchema):
-    access_token: str = Field(alias="accessToken")
-    refresh_token: str = Field(alias="refreshToken")
-    token_type: str = "bearer"
-    expires_in: int = Field(alias="expiresIn")
-    refresh_expires_in: int = Field(alias="refreshExpiresIn")
-
-
-class EmailVerifyRequest(AuthSchema):
-    email: EmailStr
-
-
-class EmailVerifyConfirmRequest(AuthSchema):
-    token: str
-
-
-class TokenValidateRequest(AuthSchema):
-    token: str
-
-
-class TokenValidateResponse(AuthSchema):
-    valid: bool = True
-
-
-class RefreshRequest(AuthSchema):
-    refresh_token: str = Field(alias="refreshToken")
-
-
-class LogoutRequest(AuthSchema):
-    refresh_token: str = Field(alias="refreshToken")
-
-
-class PasswordForgotRequest(AuthSchema):
-    email: EmailStr
-
-
-class PasswordResetRequest(AuthSchema):
-    token: str
-    password: str
-    confirm_password: str = Field(alias="confirmPassword")
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        return v
-
-    @model_validator(mode="after")
-    def validate_confirm(self) -> "PasswordResetRequest":
-        if self.password != self.confirm_password:
-            raise ValueError("Password confirmation does not match")
-        return self
-
-
-class MessageResponse(AuthSchema):
-    message: str
-
-
-class MeResponse(AuthSchema):
-    id: int
-    email: str
-    display_name: str | None = Field(default=None, alias="displayName")
-    is_email_verified: bool = Field(alias="isEmailVerified")
-    created_at: str = Field(alias="createdAt")
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def create_access_token(user_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
-    to_encode = {"sub": str(user_id), "exp": expire, "type": "access"}
-    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 def _build_token_response(access_token: str, refresh_token: str) -> TokenResponse:
@@ -169,12 +58,6 @@ def _build_token_response(access_token: str, refresh_token: str) -> TokenRespons
         expiresIn=settings.JWT_EXPIRE_MINUTES * 60,
         refreshExpiresIn=settings.JWT_REFRESH_EXPIRE_DAYS * 24 * 60 * 60,
     )
-
-
-def _to_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 def _get_client_ip(request: Request) -> str | None:
@@ -358,7 +241,7 @@ def request_email_verification(
         return generic
 
     latest = get_latest_one_time_token(db, user.id, ONE_TIME_PURPOSE_EMAIL_VERIFY)
-    if latest and _to_utc(latest.created_at) > utcnow() - timedelta(seconds=settings.EMAIL_RESEND_COOLDOWN_SECONDS):
+    if latest and to_utc(latest.created_at) > utcnow() - timedelta(seconds=settings.EMAIL_RESEND_COOLDOWN_SECONDS):
         return generic
 
     verify_token, _ = issue_one_time_token(

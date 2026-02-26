@@ -4,7 +4,7 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

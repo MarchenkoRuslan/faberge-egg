@@ -1,10 +1,16 @@
+"""Auth business logic: tokens, password hashing, JWT."""
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from jose import jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models import OneTimeToken, RefreshToken
+
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 ONE_TIME_PURPOSE_EMAIL_VERIFY = "email_verify"
 ONE_TIME_PURPOSE_PASSWORD_RESET = "password_reset"
@@ -20,6 +26,13 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def to_utc(dt: datetime) -> datetime:
+    """Convert datetime to UTC for comparison."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -33,6 +46,20 @@ def _db_datetime(db: Session, value: datetime) -> datetime:
 
 def _new_token() -> str:
     return secrets.token_urlsafe(48)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def create_access_token(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    to_encode = {"sub": str(user_id), "exp": expire, "type": "access"}
+    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 def get_latest_one_time_token(db: Session, user_id: int, purpose: str) -> OneTimeToken | None:

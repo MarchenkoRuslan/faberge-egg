@@ -7,9 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.models import get_db
-from app.services.payment_settlement import (
+from app.core.config import settings
+from app.core.database import get_db
+from app.domains.payments.payment_settlement import (
     PaymentSettlementResult,
     PaymentSettlementStatus,
     settle_order_payment,
@@ -17,7 +17,6 @@ from app.services.payment_settlement import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
 
 SUCCESSFUL_PAYKILLA_STATUSES = {"success", "paid", "completed", "confirmed"}
 

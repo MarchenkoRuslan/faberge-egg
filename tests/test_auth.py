@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fastapi import status
 from jose import jwt
 
-from app.config import settings
+from app.core.config import settings
 from app.models.user import User
 
 
@@ -19,7 +19,7 @@ def _register_payload(email: str = "newuser@example.com", display_name: str = "N
 
 
 def test_register_success(client, db):
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         response = client.post("/api/auth/register", json=_register_payload())
 
     assert response.status_code == status.HTTP_200_OK
@@ -45,7 +45,7 @@ def test_register_duplicate_email(client, test_user):
 
 
 def test_register_duplicate_email_does_not_send_verify_email(client, test_user):
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         response = client.post("/api/auth/register", json=_register_payload(email=test_user.email))
 
     assert response.status_code == status.HTTP_409_CONFLICT
@@ -53,7 +53,7 @@ def test_register_duplicate_email_does_not_send_verify_email(client, test_user):
 
 
 def test_register_duplicate_unverified_email_returns_conflict(client, db):
-    from app.api.auth import get_password_hash
+    from app.domains.auth.service import get_password_hash
 
     user = User(
         email="unverified-duplicate@example.com",
@@ -66,7 +66,7 @@ def test_register_duplicate_unverified_email_returns_conflict(client, db):
     db.add(user)
     db.commit()
 
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         response = client.post("/api/auth/register", json=_register_payload(email=user.email))
 
     assert response.status_code == status.HTTP_409_CONFLICT
@@ -108,7 +108,7 @@ def test_register_password_hash(client, db):
     payload = _register_payload(email="hashuser@example.com")
     payload["password"] = password
     payload["confirmPassword"] = password
-    with patch("app.api.auth.send_verify_email"):
+    with patch("app.domains.auth.router.send_verify_email"):
         response = client.post("/api/auth/register", json=payload)
     assert response.status_code == status.HTTP_200_OK
 
@@ -135,7 +135,7 @@ def test_login_success(client, test_user):
 
 
 def test_login_unverified_email_blocked(client, db):
-    from app.api.auth import get_password_hash
+    from app.domains.auth.service import get_password_hash
 
     user = User(
         email="blocked@example.com",
@@ -236,7 +236,7 @@ def test_logout_revokes_refresh_token(client, test_user):
 
 
 def test_verify_email_confirm_success(client):
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         register = client.post("/api/auth/register", json=_register_payload(email="verifyme@example.com"))
     assert register.status_code == status.HTTP_200_OK
     token = mock_send.call_args.args[2]
@@ -252,7 +252,7 @@ def test_verify_email_confirm_success(client):
 
 
 def test_verify_email_request_rate_limit(client):
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         register = client.post("/api/auth/register", json=_register_payload(email="resend@example.com"))
     assert register.status_code == status.HTTP_200_OK
 
@@ -263,17 +263,17 @@ def test_verify_email_request_rate_limit(client):
 
 def test_verify_email_request_send_failure_returns_generic_success(client, monkeypatch):
     monkeypatch.setenv("EMAIL_RESEND_COOLDOWN_SECONDS", "0")
-    with patch("app.api.auth.send_verify_email"):
+    with patch("app.domains.auth.router.send_verify_email"):
         register = client.post("/api/auth/register", json=_register_payload(email="resend-fail@example.com"))
     assert register.status_code == status.HTTP_200_OK
 
-    with patch("app.api.auth.send_verify_email", side_effect=RuntimeError("SMTP down")):
+    with patch("app.domains.auth.router.send_verify_email", side_effect=RuntimeError("SMTP down")):
         response = client.post("/api/auth/verify-email/request", json={"email": "resend-fail@example.com"})
     assert response.status_code == status.HTTP_200_OK
 
 
 def test_password_reset_flow(client, test_user):
-    with patch("app.api.auth.send_password_reset_email") as mock_send:
+    with patch("app.domains.auth.router.send_password_reset_email") as mock_send:
         forgot = client.post("/api/auth/password/forgot", json={"email": "test@example.com"})
     assert forgot.status_code == status.HTTP_200_OK
     reset_token = mock_send.call_args.args[2]
@@ -302,20 +302,20 @@ def test_password_reset_flow(client, test_user):
 
 
 def test_password_forgot_nonexistent_user_is_generic(client):
-    with patch("app.api.auth.send_password_reset_email") as mock_send:
+    with patch("app.domains.auth.router.send_password_reset_email") as mock_send:
         response = client.post("/api/auth/password/forgot", json={"email": "nobody@example.com"})
     assert response.status_code == status.HTTP_200_OK
     mock_send.assert_not_called()
 
 
 def test_password_forgot_send_failure_returns_generic_success(client, test_user):
-    with patch("app.api.auth.send_password_reset_email", side_effect=RuntimeError("SMTP down")):
+    with patch("app.domains.auth.router.send_password_reset_email", side_effect=RuntimeError("SMTP down")):
         response = client.post("/api/auth/password/forgot", json={"email": "test@example.com"})
     assert response.status_code == status.HTTP_200_OK
 
 
 def test_register_email_send_failure_rolls_back_user(client, db):
-    with patch("app.api.auth.send_verify_email", side_effect=RuntimeError("SMTP down")):
+    with patch("app.domains.auth.router.send_verify_email", side_effect=RuntimeError("SMTP down")):
         response = client.post("/api/auth/register", json=_register_payload(email="nosend@example.com"))
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
@@ -339,7 +339,7 @@ def test_me_requires_authentication(client):
 
 
 def test_verify_email_validate_valid_token_returns_200(client):
-    with patch("app.api.auth.send_verify_email") as mock_send:
+    with patch("app.domains.auth.router.send_verify_email") as mock_send:
         client.post("/api/auth/register", json=_register_payload(email="validate-v@example.com"))
     token = mock_send.call_args.args[2]
     response = client.post("/api/auth/verify-email/validate", json={"token": token})
@@ -366,7 +366,7 @@ def test_verify_email_confirm_invalid_token_returns_link_no_longer_active(client
 
 
 def test_password_reset_validate_valid_token_returns_200(client, test_user):
-    with patch("app.api.auth.send_password_reset_email") as mock_send:
+    with patch("app.domains.auth.router.send_password_reset_email") as mock_send:
         client.post("/api/auth/password/forgot", json={"email": "test@example.com"})
     token = mock_send.call_args.args[2]
     response = client.post("/api/auth/password/reset/validate", json={"token": token})
@@ -392,14 +392,14 @@ def test_email_rate_limit_returns_429(client, test_user, monkeypatch):
         type(settings), "RATE_LIMIT_EMAIL_WINDOW_SECONDS", property(lambda self: 900)
     )
     headers = {"X-Forwarded-For": "192.0.2.99"}
-    with patch("app.api.auth.send_password_reset_email"):
+    with patch("app.domains.auth.router.send_password_reset_email"):
         first = client.post(
             "/api/auth/password/forgot",
             json={"email": "test@example.com"},
             headers=headers,
         )
     assert first.status_code == status.HTTP_200_OK
-    with patch("app.api.auth.send_password_reset_email"):
+    with patch("app.domains.auth.router.send_password_reset_email"):
         second = client.post(
             "/api/auth/password/forgot",
             json={"email": "test@example.com"},

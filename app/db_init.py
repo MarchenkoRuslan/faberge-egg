@@ -6,8 +6,8 @@ from urllib.parse import urlparse
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.config import settings
-from app.models.database import SessionLocal, _normalize_database_url, engine
+from app.core.config import settings
+from app.core.database import SessionLocal, _normalize_database_url, engine
 from app.models import (  # noqa: F401 - register models
     Asset, AssetMedia, OneTimeToken, Order, RefreshToken, Showroom, User,
 )

@@ -123,7 +123,7 @@ def test_get_showroom_draft_returns_404(client, db):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_showroom_with_assets(mock_presign, client, db):
     showroom = _create_showroom(db)
     asset = _create_asset(db, showroom)
@@ -145,7 +145,7 @@ def test_get_showroom_with_assets(mock_presign, client, db):
     assert asset_data["price_special_eur"] == "0.03"
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value=None)
+@patch("app.domains.catalog.service.get_presigned_url", return_value=None)
 def test_get_showroom_media_url_none_when_s3_unavailable(mock_presign, client, db):
     showroom = _create_showroom(db)
     asset = _create_asset(db, showroom)
@@ -156,7 +156,7 @@ def test_get_showroom_media_url_none_when_s3_unavailable(mock_presign, client, d
     assert response.json()["assets"][0]["media"][0]["url"] is None
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_showroom_image_urls_from_meta(mock_presign, client, db):
     _create_showroom(
         db,
@@ -175,7 +175,7 @@ def test_showroom_image_urls_from_meta(mock_presign, client, db):
     assert detail["background_image_url"] == "https://signed.example.com/img.jpg"
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_showroom_image_urls_none_without_meta(mock_presign, client, db):
     _create_showroom(db)
     response = client.get("/api/showrooms")
@@ -184,7 +184,7 @@ def test_showroom_image_urls_none_without_meta(mock_presign, client, db):
     assert item["background_image_url"] is None
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_showroom_excludes_draft_assets(mock_presign, client, db):
     showroom = _create_showroom(db)
     _create_asset(db, showroom, slug="active-asset", status="active")
@@ -196,7 +196,7 @@ def test_get_showroom_excludes_draft_assets(mock_presign, client, db):
     assert assets[0]["slug"] == "active-asset"
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_showroom_asset_without_commerce(mock_presign, client, db):
     showroom = _create_showroom(db)
     _create_asset(db, showroom, total_fractions=0, is_active=True)
@@ -209,7 +209,7 @@ def test_get_showroom_asset_without_commerce(mock_presign, client, db):
 # --- Asset detail ---
 
 
-@patch("app.api.showrooms.get_presigned_url", return_value="https://signed.example.com/img.jpg")
+@patch("app.domains.catalog.service.get_presigned_url", return_value="https://signed.example.com/img.jpg")
 def test_get_asset_detail(mock_presign, client, db):
     showroom = _create_showroom(db)
     asset = _create_asset(db, showroom)

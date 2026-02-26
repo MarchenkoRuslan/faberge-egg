@@ -5,9 +5,9 @@ import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.models import get_db
-from app.services.payment_settlement import (
+from app.core.config import settings
+from app.core.database import get_db
+from app.domains.payments.payment_settlement import (
     PaymentSettlementResult,
     PaymentSettlementStatus,
     settle_order_payment,
@@ -40,90 +40,60 @@ def _get_checkout_session_from_event(event: dict) -> dict | None:
     data = event.get("data")
     if not isinstance(data, dict):
         return None
-    session = data.get("object")
-    if not isinstance(session, dict):
-        return None
-    return session
+    return data.get("object") if isinstance(data.get("object"), dict) else None
 
 
 def _parse_stripe_order_id(session: dict) -> int | None:
     metadata = session.get("metadata")
     if not isinstance(metadata, dict):
-        logger.warning("No order_id in session metadata")
         return None
     order_id_str = metadata.get("order_id")
     if not order_id_str:
-        logger.warning("No order_id in session metadata")
         return None
     try:
         order_id = int(order_id_str)
-    except (ValueError, TypeError) as exc:
-        logger.error("Invalid order_id format: %s, error: %s", order_id_str, exc)
+        return order_id if order_id > 0 else None
+    except (ValueError, TypeError):
         return None
-    if order_id <= 0:
-        logger.warning("Invalid non-positive order_id: %s", order_id)
-        return None
-    return order_id
 
 
-def _parse_stripe_amount_total(session: dict, order_id: int) -> tuple[bool, int | None]:
+def _parse_stripe_amount_total(session: dict) -> tuple[bool, int | None]:
     amount_total = session.get("amount_total")
     if amount_total is None:
         return True, None
     try:
         return True, int(amount_total)
     except (TypeError, ValueError):
-        logger.warning("Invalid Stripe amount_total for order %s: %s", order_id, amount_total)
         return False, None
 
 
-def _validate_stripe_currency(session: dict, order_id: int) -> bool:
+def _validate_stripe_currency(session: dict) -> bool:
     currency = session.get("currency")
-    if not currency:
-        return True
-    if str(currency).lower() == "eur":
-        return True
-    logger.warning("Stripe currency mismatch for order %s: %s", order_id, currency)
-    return False
+    return not currency or str(currency).lower() == "eur"
 
 
 def _log_stripe_settlement_result(result: PaymentSettlementResult) -> None:
     if result.status == PaymentSettlementStatus.PAID:
         logger.info("Order %s marked as paid, asset %s updated", result.order_id, result.asset_id)
-        return
-    if result.status == PaymentSettlementStatus.ALREADY_PAID:
+    elif result.status == PaymentSettlementStatus.ALREADY_PAID:
         logger.info("Order %s already paid, skipping", result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
+    elif result.status == PaymentSettlementStatus.ORDER_NOT_FOUND:
         logger.warning("Order %s not found", result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.ORDER_NOT_PENDING:
+    elif result.status == PaymentSettlementStatus.ORDER_NOT_PENDING:
         logger.warning("Order %s is not in pending status", result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
-        logger.warning(
-            "Order %s payment method is %s, not stripe",
-            result.order_id,
-            result.actual_payment_method,
-        )
-        return
-    if result.status == PaymentSettlementStatus.AMOUNT_MISMATCH:
+    elif result.status == PaymentSettlementStatus.WRONG_PAYMENT_METHOD:
+        logger.warning("Order %s payment method is %s, not stripe", result.order_id, result.actual_payment_method)
+    elif result.status == PaymentSettlementStatus.AMOUNT_MISMATCH:
         logger.warning(
             "Stripe amount mismatch for order %s: expected=%s, received=%s",
-            result.order_id,
-            result.expected_amount_cents,
-            result.received_amount_cents,
+            result.order_id, result.expected_amount_cents, result.received_amount_cents,
         )
-        return
-    if result.status == PaymentSettlementStatus.ASSET_NOT_FOUND:
+    elif result.status == PaymentSettlementStatus.ASSET_NOT_FOUND:
         logger.error("Asset %s not found for order %s", result.asset_id, result.order_id)
-        return
-    if result.status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
+    elif result.status == PaymentSettlementStatus.CAPACITY_EXCEEDED:
         logger.warning(
             "Cannot mark order %s as paid: %s fractions requested, %s remaining",
-            result.order_id,
-            result.requested_fractions,
-            result.remaining_fractions,
+            result.order_id, result.requested_fractions, result.remaining_fractions,
         )
 
 
@@ -131,16 +101,13 @@ def _handle_checkout_session_completed(session: dict, db: Session) -> None:
     order_id = _parse_stripe_order_id(session)
     if order_id is None:
         return
-
-    amount_ok, amount_total_cents = _parse_stripe_amount_total(session, order_id)
+    amount_ok, amount_total_cents = _parse_stripe_amount_total(session)
     if not amount_ok:
         db.rollback()
         return
-
-    if not _validate_stripe_currency(session, order_id):
+    if not _validate_stripe_currency(session):
         db.rollback()
         return
-
     try:
         result = settle_order_payment(
             db,
@@ -152,31 +119,20 @@ def _handle_checkout_session_completed(session: dict, db: Session) -> None:
     except Exception as exc:
         logger.error("Error processing order %s: %s", order_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error") from exc
-
     _log_stripe_settlement_result(result)
 
 
-@router.post(
-    "/stripe",
-    summary="Stripe webhook",
-)
+@router.post("/stripe", summary="Stripe webhook")
 async def stripe_webhook(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ):
-    """
-    Stripe sends events here. We handle checkout.session.completed:
-    mark order as paid and increment asset sold_special_fractions.
-    Idempotent: if order already paid, no double spend.
-    """
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     event = _construct_stripe_event(payload, sig_header)
     if event is None:
         return {"received": True}
-
     session = _get_checkout_session_from_event(event)
     if session is not None:
         _handle_checkout_session_completed(session, db)
-
     return {"received": True}

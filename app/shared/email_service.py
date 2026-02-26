@@ -14,8 +14,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import resend
 
-from app.config import settings
-from app.utils.redaction import mask_email
+from app.core.config import settings
+from app.shared.utils.redaction import mask_email
 
 logger = logging.getLogger(__name__)
 

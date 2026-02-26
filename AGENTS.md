@@ -28,65 +28,58 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 
 - Stack: FastAPI + SQLAlchemy + JWT auth + Stripe/PayKilla integrations.
 - App entrypoint: `app/main.py`.
-- Settings/env: `app/config.py`.
+- Settings/env: `app/core/config.py`.
 - DB init/seed: `app/db_init.py`.
 - CI: `.github/workflows/python-package.yml` (Python 3.11, `flake8`, `pytest -q`).
+- Architecture: domain-oriented. Core: `app/core/`. Domains: `app/domains/`. Shared: `app/shared/`. Models: `app/models/`.
 
 ## Read-First Map (By Task Type)
 
 - Startup/env/runtime validation:
-  - `app/config.py`
+  - `app/core/config.py`
   - `app/main.py`
   - `tests/test_startup_config.py`
 - Auth/JWT/dependencies:
-  - `app/api/auth.py`
-  - `app/dependencies.py`
+  - `app/domains/auth/` (router, service, schemas)
+  - `app/core/dependencies.py`
   - `app/models/user.py`
   - `tests/test_auth.py`
   - `tests/test_dependencies.py`
-- Showrooms/assets/media:
-  - `app/api/showrooms.py`
-  - `app/api/assets.py`
-  - `app/models/showroom.py`
-  - `app/models/asset.py`
-  - `app/models/asset_media.py`
-  - `app/schemas/showrooms.py`
-  - `app/services/storage.py`
+- Catalog (showrooms/assets):
+  - `app/domains/catalog/` (router, service, schemas)
+  - `app/models/showroom.py`, `app/models/asset.py`, `app/models/asset_media.py`
+  - `app/shared/storage.py`
   - `tests/test_showrooms.py`
-- Assets/orders business flow:
-  - `app/api/assets.py`
-  - `app/api/order.py`
-  - `app/models/asset.py`
-  - `app/models/order.py`
-  - `app/schemas/showrooms.py`
-  - `app/schemas/orders.py`
   - `tests/test_lots.py`
+- Orders:
+  - `app/domains/orders/` (router, service, schemas)
+  - `app/models/order.py`
   - `tests/test_orders.py`
+- Provenance:
+  - `app/domains/provenance/` (router, service, schemas)
+  - `tests/test_provenance.py`
 - Payments/webhooks:
-  - `app/services/payment_gateways.py`
-  - `app/services/stripe_service.py`
-  - `app/services/paykilla_service.py`
-  - `app/webhooks/stripe_webhook.py`
-  - `app/webhooks/paykilla_callback.py`
+  - `app/domains/payments/` (stripe_service, paykilla_service, payment_gateways, payment_settlement)
+  - `app/domains/payments/routers/` (stripe_webhook, paykilla_callback)
   - `tests/test_services.py`
   - `tests/test_webhooks.py`
 - Upsale campaigns (post-purchase email marketing):
   - `app/models/upsale_campaign.py`
   - `app/services/upsale_campaign_service.py`
-  - `app/services/email_service.py` (send_upsale_email)
-  - `app/services/payment_settlement.py` (_trigger_upsale_campaign)
-  - `app/api/campaigns.py`
-  - `app/schemas/campaigns.py`
+  - `app/shared/email_service.py` (send_upsale_email)
+  - `app/domains/payments/payment_settlement.py` (_trigger_upsale_campaign)
+  - `app/domains/campaigns/` (router, schemas)
   - `tests/test_upsale_campaigns.py`
 - DB/session wiring:
-  - `app/models/database.py`
+  - `app/core/database.py`
+  - `app/models/database.py` (re-exports from core)
   - `tests/conftest.py`
   - `tests/test_database.py`
 
 ## Search Policy (Do This Before Global Scans)
 
 - Do not scan the whole repository first.
-- Start with the read-first map above for the relevant domain.
+- Start with the read-first map above for the relevant domain. Domains live under `app/domains/<domain>/`.
 - Use targeted symbol search (`rg "<symbol_or_function_name>" app tests`) only if needed.
 - Expand to other files only when:
   - a referenced symbol is unresolved, or
@@ -112,7 +105,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - S3/storage config (`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, etc.) is optional; storage service degrades gracefully when not configured.
 - Seed creates showroom "latvian-treasure", asset "faberge-egg" (with commerce fields), and creates media records with storage keys under `latvian-treasure/faberge-egg/`.
 - The `lots` table has been merged into `assets`: all commerce fields (fractions, prices, is_active) now live directly on the Asset model.
-- **Upsale campaigns**: post-purchase email marketing funnel (4d→upsale1→7d check→upsale2/bonus→upsale3). State machine in `app/services/upsale_campaign_service.py`. Background asyncio-task in `lifespan()` processes due campaigns every N seconds. Triggered from `settle_order_payment()`. Gated by `UPSALE_CAMPAIGN_ENABLED` (default: False). Requires Resend template IDs: `RESEND_TEMPLATE_UPSALE1`, `_UPSALE2`, `_UPSALE3`, `_BONUS_UPSALE`. Admin API at `/api/admin/campaigns`. Tables: `upsale_campaigns`, `campaign_email_logs`.
+- **Upsale campaigns**: post-purchase email marketing funnel (4d→upsale1→7d check→upsale2/bonus→upsale3). State machine in `app/services/upsale_campaign_service.py`. Background asyncio-task in `lifespan()` processes due campaigns every N seconds. Triggered from `app/domains/payments/payment_settlement.py` (`settle_order_payment`). Gated by `UPSALE_CAMPAIGN_ENABLED` (default: False). Requires Resend template IDs: `RESEND_TEMPLATE_UPSALE1`, `_UPSALE2`, `_UPSALE3`, `_BONUS_UPSALE`. Admin API at `/api/admin/campaigns`. Tables: `upsale_campaigns`, `campaign_email_logs`.
 
 ## Cursor Cloud specific instructions
 
@@ -155,7 +148,7 @@ The app runs migrations and seeds data automatically on startup. Swagger UI is a
 
 ### Gotchas
 
-- The app uses `pbkdf2_sha256` for password hashing (NOT bcrypt) — see `pwd_context` in `app/api/auth.py`.
+- The app uses `pbkdf2_sha256` for password hashing (NOT bcrypt) — see `pwd_context` in `app/domains/auth/service.py`.
 - Registration requires Resend email service (`RESEND_API_KEY`). Without it, registration fails. For dev testing, create users directly in the DB or use `tests/conftest.py` fixtures.
 - S3, Stripe, PayKilla, and Resend are all optional for local dev — the app starts and core endpoints work without them.
 - `~/.local/bin` must be on `PATH` for `uvicorn`, `pytest`, `flake8` commands to work.

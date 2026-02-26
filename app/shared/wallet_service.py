@@ -7,9 +7,9 @@ import os
 from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models.blockchain_wallet import BlockchainWallet
-from app.services.blockchain_service import get_blockchain_service
+from app.shared.blockchain_service import get_blockchain_service
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ ALLOWED_REDIRECT_SCHEMES = {"http", "https"}
 
 
 class InvalidRedirectURLError(ValueError):
-    """Raised when redirect URL validation fails (client error → HTTP 400)."""
+    """Raised when redirect URL validation fails (client error -> HTTP 400)."""
 
 
 def validate_redirect_url(url: str) -> str:

@@ -4,12 +4,12 @@ from enum import Enum
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models import Asset, Order
 from app.models.fraction_transfer import FractionTransfer
-from app.services.blockchain_service import get_blockchain_service
 from app.services.upsale_campaign_service import create_campaign, on_upsale_purchase
-from app.services.wallet_service import get_wallet_address
+from app.shared.blockchain_service import get_blockchain_service
+from app.shared.wallet_service import get_wallet_address
 
 logger = logging.getLogger(__name__)
 
@@ -129,12 +129,6 @@ def _validate_asset_capacity(
 def _record_fraction_transfer(
     db: Session, *, order: Order, asset: Asset,
 ) -> FractionTransfer | None:
-    """Create a FractionTransfer provenance record for a settled order.
-
-    Uses a SAVEPOINT so that a failure here does not poison the session
-    and cause the outer commit (order + asset updates) to raise
-    PendingRollbackError.
-    """
     try:
         with db.begin_nested():
             transfer = FractionTransfer(
@@ -150,28 +144,20 @@ def _record_fraction_transfer(
             db.flush()
         return transfer
     except Exception:
-        logger.exception(
-            "Failed to create FractionTransfer for order_id=%d", order.id,
-        )
+        logger.exception("Failed to create FractionTransfer for order_id=%d", order.id)
         return None
 
 
 def _attempt_blockchain_transfer(
     db: Session, *, transfer: FractionTransfer, order: Order,
 ) -> None:
-    """If blockchain is enabled, initiate the on-chain fraction transfer."""
     if not settings.BLOCKCHAIN_ENABLED:
         return
-
     try:
         buyer_address = get_wallet_address(order.user_id, db)
         if not buyer_address:
-            logger.warning(
-                "blockchain transfer skipped: buyer user_id=%d has no wallet",
-                order.user_id,
-            )
+            logger.warning("blockchain transfer skipped: buyer user_id=%d has no wallet", order.user_id)
             return
-
         bc = get_blockchain_service()
         result = bc.transfer_fractions(
             from_address="platform",
@@ -184,17 +170,12 @@ def _attempt_blockchain_transfer(
         db.commit()
     except Exception:
         logger.exception(
-            "blockchain transfer failed for order_id=%d transfer_id=%d "
-            "(provenance record preserved, tx can be retried)",
+            "blockchain transfer failed for order_id=%d transfer_id=%d",
             order.id, transfer.id,
         )
 
 
 def _trigger_upsale_campaign(db: Session, *, order: Order) -> None:
-    """Start or advance an upsale campaign after a successful payment.
-
-    Failures here must never affect the payment result.
-    """
     try:
         advanced = on_upsale_purchase(db, order)
         if not advanced:
@@ -202,10 +183,7 @@ def _trigger_upsale_campaign(db: Session, *, order: Order) -> None:
         db.commit()
     except Exception:
         db.rollback()
-        logger.exception(
-            "Upsale campaign hook failed for order_id=%d (payment unaffected)",
-            order.id,
-        )
+        logger.exception("Upsale campaign hook failed for order_id=%d (payment unaffected)", order.id)
 
 
 def settle_order_payment(
@@ -216,27 +194,19 @@ def settle_order_payment(
     external_payment_id: str | None,
     callback_amount_cents: int | None = None,
 ) -> PaymentSettlementResult:
-    """Mark an order as paid and increment asset sold fractions when validations pass."""
     try:
         order = _load_order(db, order_id)
         if not order:
             return _rollback_and_result(
                 db,
-                PaymentSettlementResult(
-                    status=PaymentSettlementStatus.ORDER_NOT_FOUND,
-                    order_id=order_id,
-                ),
+                PaymentSettlementResult(status=PaymentSettlementStatus.ORDER_NOT_FOUND, order_id=order_id),
             )
-
         order_validation_result = _validate_order_for_settlement(
-            db,
-            order=order,
-            expected_payment_method=expected_payment_method,
+            db, order=order, expected_payment_method=expected_payment_method,
             callback_amount_cents=callback_amount_cents,
         )
         if order_validation_result:
             return order_validation_result
-
         asset = _load_asset(db, order.asset_id)
         if not asset:
             return _rollback_and_result(
@@ -247,23 +217,17 @@ def settle_order_payment(
                     asset_id=order.asset_id,
                 ),
             )
-
         capacity_validation_result = _validate_asset_capacity(db, order=order, asset=asset)
         if capacity_validation_result:
             return capacity_validation_result
-
         asset.sold_special_fractions = (asset.sold_special_fractions or 0) + order.fraction_count
         order.status = "paid"
         order.external_payment_id = external_payment_id
-
         transfer = _record_fraction_transfer(db, order=order, asset=asset)
         db.commit()
-
         if transfer:
             _attempt_blockchain_transfer(db, transfer=transfer, order=order)
-
         _trigger_upsale_campaign(db, order=order)
-
         return PaymentSettlementResult(
             status=PaymentSettlementStatus.PAID,
             order_id=order.id,

@@ -7,7 +7,7 @@ from app.models.order import Order
 
 def test_create_order_stripe_success(client, test_user, test_asset, auth_headers, db):
     """Test successful order creation with Stripe."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -39,7 +39,7 @@ def test_create_order_stripe_success(client, test_user, test_asset, auth_headers
 
 def test_create_order_paykilla_success(client, test_user, test_asset, auth_headers):
     """Test successful order creation with PayKilla."""
-    with patch("app.services.paykilla_service.create_payment") as mock_paykilla:
+    with patch("app.domains.payments.paykilla_service.create_payment") as mock_paykilla:
         mock_paykilla.return_value = "https://paykilla.com/checkout?order_id=1"
 
         response = client.post(
@@ -93,7 +93,7 @@ def test_create_order_max_fractions_validation(client, test_asset, auth_headers)
 
 def test_create_order_asset_not_found(client, auth_headers):
     """Test order creation with non-existent asset."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -142,7 +142,7 @@ def test_create_order_unauthorized(client, test_asset):
 
 def test_create_order_price_calculation(client, test_asset, auth_headers, db):
     """Test price calculation with Decimal precision."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -166,7 +166,7 @@ def test_create_order_price_calculation(client, test_asset, auth_headers, db):
 
 def test_create_order_custom_urls(client, test_asset, auth_headers):
     """Test order creation with custom return_url and cancel_url."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_123"
 
@@ -190,7 +190,7 @@ def test_create_order_custom_urls(client, test_asset, auth_headers):
 
 def test_create_order_stripe_error(client, test_asset, auth_headers):
     """Test order creation when Stripe service fails."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.side_effect = ValueError("Stripe API error")
 
         response = client.post(
@@ -365,7 +365,7 @@ def test_get_payment_methods(client):
 
 def test_create_order_uses_gateway_default_urls(client, test_asset, auth_headers):
     """Order creation uses gateway defaults when custom URLs are absent."""
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = "https://checkout.stripe.com/test"
         mock_stripe.return_value.id = "cs_test_456"
 
@@ -391,7 +391,7 @@ def test_create_order_invalid_gateway_default_url_returns_400(
     monkeypatch.setenv("STRIPE_SUCCESS_URL", "javascript:alert(1)")
     monkeypatch.setenv("STRIPE_CANCEL_URL", "http://localhost:3000/cancel")
 
-    with patch("app.services.stripe_service.stripe.checkout.Session.create"):
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create"):
         response = client.post(
             "/api/orders",
             json={
@@ -427,7 +427,7 @@ def test_create_order_stripe_error_rolls_back_pending_order(client, test_asset, 
     """Order row should not persist if checkout creation fails."""
     pending_before = db.query(Order).count()
 
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.side_effect = ValueError("Stripe API error")
 
         response = client.post(
@@ -449,7 +449,7 @@ def test_create_order_empty_checkout_url_returns_500_and_rolls_back(client, test
     """Empty checkout URL must be treated as provider failure."""
     pending_before = db.query(Order).count()
 
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe:
+    with patch("app.domains.payments.stripe_service.stripe.checkout.Session.create") as mock_stripe:
         mock_stripe.return_value.url = ""
         mock_stripe.return_value.id = "cs_test_empty"
 

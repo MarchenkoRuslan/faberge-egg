@@ -1,4 +1,4 @@
-from app.services.blockchain_service import (
+from app.shared.blockchain_service import (
     BlockchainService,
     StubBlockchainService,
     TransferResult,

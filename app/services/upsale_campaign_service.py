@@ -30,11 +30,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models.order import Order
 from app.models.upsale_campaign import CampaignEmailLog, UpsaleCampaign
 from app.models.user import User
-from app.services.email_service import send_upsale_email
+from app.shared.email_service import send_upsale_email
 
 logger = logging.getLogger(__name__)
 

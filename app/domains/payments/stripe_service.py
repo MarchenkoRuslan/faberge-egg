@@ -1,6 +1,6 @@
 import stripe
 
-from app.services.url_utils import append_query_param, validate_redirect_url
+from app.shared.url_utils import append_query_param, validate_redirect_url
 
 
 def create_checkout_session(
@@ -12,7 +12,7 @@ def create_checkout_session(
     cancel_url: str,
 ) -> tuple[str, str]:
     """Create Stripe Checkout Session and return (checkout URL, session ID)."""
-    from app.config import settings
+    from app.core.config import settings
 
     if not settings.STRIPE_SECRET_KEY:
         raise ValueError("STRIPE_SECRET_KEY is not set")

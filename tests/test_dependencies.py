@@ -1,10 +1,10 @@
-﻿from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import status
 from jose import jwt
 
-from app.config import settings
-from app.dependencies import get_current_user_optional
+from app.core.config import settings
+from app.core.dependencies import get_current_user_optional
 
 
 def test_get_current_user_success(client, test_user, db):

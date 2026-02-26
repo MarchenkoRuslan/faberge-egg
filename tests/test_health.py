@@ -22,7 +22,7 @@ def test_health_returns_ok(client):
 def test_health_returns_503_when_db_unavailable(client):
     """Health check must return 503 when database is unavailable (for load balancers)."""
     from app.main import app
-    from app.models.database import get_db
+    from app.core.database import get_db
 
     broken_session = MagicMock()
     broken_session.execute.side_effect = Exception("connection refused")
