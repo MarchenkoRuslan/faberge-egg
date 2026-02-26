@@ -26,6 +26,7 @@ from app.services.auth_tokens import (
 )
 from app.rate_limit import require_email_rate_limit
 from app.services.email_service import send_password_reset_email, send_verify_email
+from app.services.wallet_service import create_user_wallet
 from app.utils.redaction import mask_email
 
 router = APIRouter()
@@ -281,6 +282,18 @@ def register(
         masked_email,
         user.id,
     )
+
+    try:
+        create_user_wallet(user.id, db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "register wallet_creation_failed request_id=%s user_id=%s "
+            "(user created, wallet can be provisioned later)",
+            request_id,
+            user.id,
+        )
 
     return RegisterResponse(
         id=user.id,

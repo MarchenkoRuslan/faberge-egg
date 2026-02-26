@@ -153,6 +153,28 @@ class Settings:
     def RUN_SEED_ON_STARTUP(self) -> bool:
         return self._get_bool("RUN_SEED_ON_STARTUP", True)
 
+    # --- Blockchain ---
+
+    @property
+    def BLOCKCHAIN_ENABLED(self) -> bool:
+        return self._get_bool("BLOCKCHAIN_ENABLED", False)
+
+    @property
+    def BLOCKCHAIN_RPC_URL(self) -> str:
+        return os.getenv("BLOCKCHAIN_RPC_URL", "")
+
+    @property
+    def BLOCKCHAIN_CONTRACT_ADDRESS(self) -> str:
+        return os.getenv("BLOCKCHAIN_CONTRACT_ADDRESS", "")
+
+    @property
+    def BLOCKCHAIN_EXPLORER_URL(self) -> str:
+        return os.getenv("BLOCKCHAIN_EXPLORER_URL", "")
+
+    @property
+    def WALLET_ENCRYPTION_KEY(self) -> str:
+        return os.getenv("WALLET_ENCRYPTION_KEY", "")
+
     # --- S3 / Railway Bucket ---
 
     @property

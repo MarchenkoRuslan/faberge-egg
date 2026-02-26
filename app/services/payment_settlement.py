@@ -1,9 +1,16 @@
+import logging
 from dataclasses import dataclass
 from enum import Enum
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import Asset, Order
+from app.models.fraction_transfer import FractionTransfer
+from app.services.blockchain_service import get_blockchain_service
+from app.services.wallet_service import get_wallet_address
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentSettlementStatus(str, Enum):
@@ -108,6 +115,70 @@ def _validate_asset_capacity(
     return None
 
 
+def _record_fraction_transfer(
+    db: Session, *, order: Order, asset: Asset,
+) -> FractionTransfer | None:
+    """Create a FractionTransfer provenance record for a settled order.
+
+    Uses a SAVEPOINT so that a failure here does not poison the session
+    and cause the outer commit (order + asset updates) to raise
+    PendingRollbackError.
+    """
+    try:
+        with db.begin_nested():
+            transfer = FractionTransfer(
+                asset_id=asset.id,
+                from_user_id=None,
+                to_user_id=order.user_id,
+                fraction_count=order.fraction_count,
+                transfer_type="purchase",
+                order_id=order.id,
+                blockchain_status="pending",
+            )
+            db.add(transfer)
+            db.flush()
+        return transfer
+    except Exception:
+        logger.exception(
+            "Failed to create FractionTransfer for order_id=%d", order.id,
+        )
+        return None
+
+
+def _attempt_blockchain_transfer(
+    db: Session, *, transfer: FractionTransfer, order: Order,
+) -> None:
+    """If blockchain is enabled, initiate the on-chain fraction transfer."""
+    if not settings.BLOCKCHAIN_ENABLED:
+        return
+
+    try:
+        buyer_address = get_wallet_address(order.user_id, db)
+        if not buyer_address:
+            logger.warning(
+                "blockchain transfer skipped: buyer user_id=%d has no wallet",
+                order.user_id,
+            )
+            return
+
+        bc = get_blockchain_service()
+        result = bc.transfer_fractions(
+            from_address="platform",
+            to_address=buyer_address,
+            contract_ref=settings.BLOCKCHAIN_CONTRACT_ADDRESS,
+            count=order.fraction_count,
+        )
+        transfer.blockchain_tx_hash = result.tx_hash
+        transfer.blockchain_status = result.status
+        db.commit()
+    except Exception:
+        logger.exception(
+            "blockchain transfer failed for order_id=%d transfer_id=%d "
+            "(provenance record preserved, tx can be retried)",
+            order.id, transfer.id,
+        )
+
+
 def settle_order_payment(
     db: Session,
     *,
@@ -155,7 +226,13 @@ def settle_order_payment(
         asset.sold_special_fractions = (asset.sold_special_fractions or 0) + order.fraction_count
         order.status = "paid"
         order.external_payment_id = external_payment_id
+
+        transfer = _record_fraction_transfer(db, order=order, asset=asset)
         db.commit()
+
+        if transfer:
+            _attempt_blockchain_transfer(db, transfer=transfer, order=order)
+
         return PaymentSettlementResult(
             status=PaymentSettlementStatus.PAID,
             order_id=order.id,

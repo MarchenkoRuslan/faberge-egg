@@ -20,6 +20,7 @@ os.environ["PAYKILLA_WEBHOOK_SECRET"] = "pk_whsec_test_mock"
 # Relax rate limit in tests so email-sending endpoints don't return 429
 os.environ["RATE_LIMIT_EMAIL_REQUESTS"] = "1000"
 os.environ["RATE_LIMIT_EMAIL_WINDOW_SECONDS"] = "1"
+os.environ["WALLET_ENCRYPTION_KEY"] = "uN4BJBTnBE7uXEe0bvq4Zmd6QNbRX6rGqljTTyAW4Is="
 
 # Create test database engine.
 test_engine = create_engine(
@@ -172,6 +173,58 @@ def test_asset_inactive(db: Session, test_showroom):
     db.commit()
     db.refresh(asset)
     return asset
+
+
+@pytest.fixture
+def test_wallet(db: Session, test_user):
+    """Create a blockchain wallet for the test user."""
+    from app.models.blockchain_wallet import BlockchainWallet
+
+    wallet = BlockchainWallet(
+        user_id=test_user.id,
+        address="0xaabbccdd11223344556677889900aabbccddeeff",
+        encrypted_private_key="test-encrypted-key",
+    )
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet
+
+
+@pytest.fixture
+def test_wallet2(db: Session, test_user2):
+    """Create a blockchain wallet for the second test user."""
+    from app.models.blockchain_wallet import BlockchainWallet
+
+    wallet = BlockchainWallet(
+        user_id=test_user2.id,
+        address="0x1122334455667788990011223344556677889900",
+        encrypted_private_key="test-encrypted-key-2",
+    )
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet
+
+
+@pytest.fixture
+def test_fraction_transfer(db: Session, test_asset, test_user):
+    """Create a sample fraction transfer."""
+    from app.models.fraction_transfer import FractionTransfer
+
+    transfer = FractionTransfer(
+        asset_id=test_asset.id,
+        from_user_id=None,
+        to_user_id=test_user.id,
+        fraction_count=100,
+        transfer_type="purchase",
+        blockchain_status="confirmed",
+        blockchain_tx_hash="0xdeadbeef",
+    )
+    db.add(transfer)
+    db.commit()
+    db.refresh(transfer)
+    return transfer
 
 
 @pytest.fixture
