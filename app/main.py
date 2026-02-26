@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -7,11 +8,13 @@ from urllib.parse import urlparse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import assets, auth, order, provenance, showrooms
+from app.api import assets, auth, campaigns, order, provenance, showrooms
 from app.config import settings
 from app.db_init import run_migrations, run_seed, wait_for_db
 from app.models import get_db
+from app.models.database import SessionLocal
 from app.services.email_service import get_resend_startup_diagnostics
+from app.services.upsale_campaign_service import process_due_campaigns
 from app.webhooks import paykilla_callback, stripe_webhook
 
 # Configure logging: flush after each record so logs appear immediately in Railway/containers
@@ -301,6 +304,21 @@ def _run_startup_database_tasks() -> None:
     run_seed(require_schema=settings.RUN_MIGRATIONS_ON_STARTUP)
 
 
+async def _campaign_processor_loop() -> None:
+    """Background loop that processes due upsale campaigns at a fixed interval."""
+    interval = settings.UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS
+    logger.info("Upsale campaign processor started (interval=%ds)", interval)
+    while True:
+        await asyncio.sleep(interval)
+        db = SessionLocal()
+        try:
+            process_due_campaigns(db)
+        except Exception:
+            logger.exception("Upsale campaign processor tick failed")
+        finally:
+            db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database_url = "<unavailable>"
@@ -325,8 +343,21 @@ async def lifespan(app: FastAPI):
             diagnostics,
         )
         raise
+
+    campaign_task = None
+    if settings.UPSALE_CAMPAIGN_ENABLED:
+        campaign_task = asyncio.create_task(_campaign_processor_loop())
+
     logger.info("Application startup completed successfully.")
     yield
+
+    if campaign_task is not None:
+        campaign_task.cancel()
+        try:
+            await campaign_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Upsale campaign processor stopped.")
 
 
 app = FastAPI(
@@ -346,6 +377,7 @@ app = FastAPI(
         {"name": "Auth", "description": "Registration, email verification, login, profile, password reset."},
         {"name": "Orders", "description": "Create order and list my orders (requires auth)."},
         {"name": "Provenance", "description": "Fraction transfer history (provenance) for assets."},
+        {"name": "Campaigns", "description": "Upsale email campaign monitoring (admin)."},
         {"name": "Webhooks", "description": "Called by Stripe and PayKilla."},
     ],
 )
@@ -390,6 +422,7 @@ app.include_router(assets.router, prefix="/api/assets", tags=["Assets"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(order.router, prefix="/api/orders", tags=["Orders"])
 app.include_router(provenance.router, prefix="/api/assets", tags=["Provenance"])
+app.include_router(campaigns.router, prefix="/api/admin", tags=["Campaigns"])
 app.include_router(stripe_webhook.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(paykilla_callback.router, prefix="/webhooks", tags=["Webhooks"])
 

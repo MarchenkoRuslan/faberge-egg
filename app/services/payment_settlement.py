@@ -8,6 +8,7 @@ from app.config import settings
 from app.models import Asset, Order
 from app.models.fraction_transfer import FractionTransfer
 from app.services.blockchain_service import get_blockchain_service
+from app.services.upsale_campaign_service import create_campaign, on_upsale_purchase
 from app.services.wallet_service import get_wallet_address
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,24 @@ def _attempt_blockchain_transfer(
         )
 
 
+def _trigger_upsale_campaign(db: Session, *, order: Order) -> None:
+    """Start or advance an upsale campaign after a successful payment.
+
+    Failures here must never affect the payment result.
+    """
+    try:
+        advanced = on_upsale_purchase(db, order)
+        if not advanced:
+            create_campaign(db, order)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Upsale campaign hook failed for order_id=%d (payment unaffected)",
+            order.id,
+        )
+
+
 def settle_order_payment(
     db: Session,
     *,
@@ -232,6 +251,8 @@ def settle_order_payment(
 
         if transfer:
             _attempt_blockchain_transfer(db, transfer=transfer, order=order)
+
+        _trigger_upsale_campaign(db, order=order)
 
         return PaymentSettlementResult(
             status=PaymentSettlementStatus.PAID,

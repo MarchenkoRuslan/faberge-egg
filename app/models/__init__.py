@@ -7,6 +7,7 @@ from app.models.asset import Asset
 from app.models.asset_media import AssetMedia
 from app.models.blockchain_wallet import BlockchainWallet
 from app.models.fraction_transfer import FractionTransfer
+from app.models.upsale_campaign import CampaignEmailLog, UpsaleCampaign
 
 __all__ = [
     "Base", "get_db",
@@ -14,4 +15,5 @@ __all__ = [
     "OneTimeToken", "RefreshToken",
     "Showroom", "Asset", "AssetMedia",
     "BlockchainWallet", "FractionTransfer",
+    "UpsaleCampaign", "CampaignEmailLog",
 ]

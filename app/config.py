@@ -201,5 +201,35 @@ class Settings:
     def PRESIGNED_URL_EXPIRES(self) -> int:
         return self._get_int("PRESIGNED_URL_EXPIRES", 3600)
 
+    # --- Upsale Campaigns ---
+
+    @property
+    def UPSALE_CAMPAIGN_ENABLED(self) -> bool:
+        return self._get_bool("UPSALE_CAMPAIGN_ENABLED", False)
+
+    @property
+    def UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS(self) -> int:
+        return self._get_int("UPSALE_CAMPAIGN_PROCESS_INTERVAL_SECONDS", 300)
+
+    @property
+    def UPSALE_CAMPAIGN_EXPIRE_DAYS(self) -> int:
+        return self._get_int("UPSALE_CAMPAIGN_EXPIRE_DAYS", 60)
+
+    @property
+    def RESEND_TEMPLATE_UPSALE1(self) -> str:
+        return os.getenv("RESEND_TEMPLATE_UPSALE1", "").strip()
+
+    @property
+    def RESEND_TEMPLATE_UPSALE2(self) -> str:
+        return os.getenv("RESEND_TEMPLATE_UPSALE2", "").strip()
+
+    @property
+    def RESEND_TEMPLATE_UPSALE3(self) -> str:
+        return os.getenv("RESEND_TEMPLATE_UPSALE3", "").strip()
+
+    @property
+    def RESEND_TEMPLATE_BONUS_UPSALE(self) -> str:
+        return os.getenv("RESEND_TEMPLATE_BONUS_UPSALE", "").strip()
+
 
 settings = Settings()

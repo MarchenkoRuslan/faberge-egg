@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 VAR_CONFIRM_LINK = "CONFIRM_LINK"
 VAR_RESET_LINK = "RESET_LINK"
 VAR_USER_NAME = "USER_NAME"
+VAR_ASSET_NAME = "ASSET_NAME"
+VAR_BUY_LINK = "BUY_LINK"
+
+UPSALE_TEMPLATE_MAP: dict[str, str] = {}
+
+
+def _get_upsale_template_map() -> dict[str, str]:
+    """Lazily build email_type -> template_id mapping from settings."""
+    return {
+        "upsale1": settings.RESEND_TEMPLATE_UPSALE1,
+        "upsale2": settings.RESEND_TEMPLATE_UPSALE2,
+        "upsale2_reminder": settings.RESEND_TEMPLATE_UPSALE2,
+        "upsale3": settings.RESEND_TEMPLATE_UPSALE3,
+        "bonus": settings.RESEND_TEMPLATE_BONUS_UPSALE,
+    }
 
 
 def _build_frontend_link(path: str, token: str) -> str:
@@ -160,3 +175,59 @@ def send_password_reset_email(
         mask_email(to_email),
         getattr(result, "id", result) or "<none>",
     )
+
+
+def send_upsale_email(
+    to_email: str,
+    display_name: str | None,
+    email_type: str,
+    asset_name: str,
+    buy_link: str,
+) -> str | None:
+    """Send an upsale campaign email using Resend template.
+
+    Returns the Resend message ID on success, or None on failure.
+    Raises RuntimeError only for configuration errors; delivery
+    failures are logged and return None so the campaign can proceed.
+    """
+    api_key, from_email = _resend_required_config()
+    template_map = _get_upsale_template_map()
+    template_id = template_map.get(email_type, "")
+    if not template_id:
+        raise RuntimeError(
+            f"Resend template for upsale email_type={email_type!r} is not configured."
+        )
+
+    user_name = (display_name or "there").strip() or "there"
+    resend.api_key = api_key
+    params: resend.Emails.SendParams = {
+        "from": from_email,
+        "to": [to_email],
+        "subject": f"Special offer for {asset_name}",
+        "template": {
+            "id": template_id,
+            "variables": {
+                VAR_USER_NAME: user_name,
+                VAR_ASSET_NAME: asset_name,
+                VAR_BUY_LINK: buy_link,
+            },
+        },
+    }
+    try:
+        result = resend.Emails.send(params)
+    except Exception as e:
+        logger.warning(
+            "Resend send failure type=%s to_email=%s error=%s",
+            email_type,
+            mask_email(to_email),
+            str(e),
+        )
+        return None
+    msg_id = getattr(result, "id", None) or (result if isinstance(result, str) else None)
+    logger.info(
+        "Resend send success type=%s to_email=%s id=%s",
+        email_type,
+        mask_email(to_email),
+        msg_id or "<none>",
+    )
+    return msg_id
