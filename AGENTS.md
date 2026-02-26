@@ -31,7 +31,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - Settings/env: `app/core/config.py`.
 - DB init/seed: `app/db_init.py`.
 - CI: `.github/workflows/python-package.yml` (Python 3.11, `flake8`, `pytest -q`).
-- Architecture: domain-oriented. Core: `app/core/`. Domains: `app/domains/`. Shared: `app/shared/`. Models: `app/models/`. Removed: `app/api`, `app/webhooks`, `app/schemas`, `app/utils`, `app/services`, `scripts`.
+- Architecture: domain-oriented. Core: `app/core/`. Domains: `app/domains/`. Shared: `app/shared/`. Models: `app/models/`. Removed: `app/api`, `app/webhooks`, `app/schemas`, `app/utils`, `app/services`, `app/shared/utils`, `scripts`.
 
 ## Read-First Map (By Task Type)
 
@@ -68,7 +68,6 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
   - `app/domains/campaigns/` (router, schemas, service)
   - `app/shared/email_service.py` (send_upsale_email)
   - `app/domains/payments/payment_settlement.py` (_trigger_upsale_campaign)
-  - `app/domains/campaigns/` (router, schemas)
   - `tests/test_upsale_campaigns.py`
 - DB/session wiring:
   - `app/core/database.py`

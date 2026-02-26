@@ -15,9 +15,25 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import resend
 
 from app.core.config import settings
-from app.shared.utils.redaction import mask_email
 
 logger = logging.getLogger(__name__)
+
+
+def mask_email(email: str) -> str:
+    """Mask email for safe logging (e.g. ab***@example.com)."""
+    if "@" not in email:
+        return "***"
+
+    local, domain = email.split("@", 1)
+    if not local:
+        return f"***@{domain}"
+
+    if len(local) < 2:
+        masked_local = local[0] + "***"
+    else:
+        masked_local = local[:2] + "***"
+    return f"{masked_local}@{domain}"
+
 
 # Template variable names (must match variables defined in your Resend templates)
 VAR_CONFIRM_LINK = "CONFIRM_LINK"

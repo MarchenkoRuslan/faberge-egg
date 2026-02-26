@@ -44,7 +44,7 @@ from app.domains.auth.service import (
 )
 from app.models import User
 from app.shared.email_service import send_password_reset_email, send_verify_email
-from app.shared.utils.redaction import mask_email
+from app.shared.email_service import mask_email
 from app.shared.wallet_service import create_user_wallet
 
 router = APIRouter()

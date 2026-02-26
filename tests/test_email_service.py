@@ -8,7 +8,7 @@ from app.shared.email_service import (
     VAR_RESET_LINK,
     VAR_USER_NAME,
 )
-from app.shared.utils.redaction import mask_email
+from app.shared.email_service import mask_email
 
 
 def _set_resend_env(monkeypatch, template_verify: str = "tpl_verify", template_reset: str = "tpl_reset"):
