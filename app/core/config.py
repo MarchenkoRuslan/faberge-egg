@@ -188,6 +188,11 @@ class Settings:
     def WALLET_ENCRYPTION_KEY(self) -> str:
         return os.getenv("WALLET_ENCRYPTION_KEY", "")
 
+    @property
+    def BLOCKCHAIN_PLATFORM_PRIVATE_KEY(self) -> str:
+        """Platform hot wallet private key for transfer_fractions (Symbol). Required when BLOCKCHAIN_ENABLED."""
+        return os.getenv("BLOCKCHAIN_PLATFORM_PRIVATE_KEY", "")
+
     # --- S3 / Railway Bucket ---
 
     @property

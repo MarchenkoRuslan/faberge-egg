@@ -106,6 +106,7 @@ Move fast with minimal codebase scanning. Start from known entrypoints, then exp
 - Seed creates showroom "latvian-treasure", asset "faberge-egg" (with commerce fields), and creates media records with storage keys under `latvian-treasure/faberge-egg/`.
 - The `lots` table has been merged into `assets`: all commerce fields (fractions, prices, is_active) now live directly on the Asset model.
 - **Upsale campaigns**: post-purchase email marketing funnel (4d→upsale1→7d check→upsale2/bonus→upsale3). State machine in `app/domains/campaigns/service.py`. Background asyncio-task in `lifespan()` processes due campaigns every N seconds. Triggered from `app/domains/payments/payment_settlement.py` (`settle_order_payment`). Gated by `UPSALE_CAMPAIGN_ENABLED` (default: False). Requires Resend template IDs: `RESEND_TEMPLATE_UPSALE1`, `_UPSALE2`, `_UPSALE3`, `_BONUS_UPSALE`. Admin API at `/api/admin/campaigns`. Tables: `upsale_campaigns`, `campaign_email_logs`.
+- **Blockchain (Symbol)**: When `BLOCKCHAIN_ENABLED=true` and `BLOCKCHAIN_RPC_URL` points to API-Gateway, `SymbolBlockchainService` in `app/shared/symbol_blockchain_service.py` calls the gateway for `create_wallet`, `transfer_fractions`, `get_transaction_status`. Requires `BLOCKCHAIN_PLATFORM_PRIVATE_KEY` (platform hot wallet) and `WALLET_ENCRYPTION_KEY`. `BLOCKCHAIN_CONTRACT_ADDRESS` is mosaic ID (16 hex) or namespace. Stub used when disabled.
 
 ## Cursor Cloud specific instructions
 

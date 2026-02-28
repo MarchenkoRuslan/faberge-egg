@@ -153,6 +153,20 @@ def test_validate_required_env_rejects_missing_wallet_key_when_blockchain_enable
         _validate_required_env_for_runtime()
 
 
+def test_validate_required_env_rejects_missing_platform_key_when_rpc_url_set(monkeypatch):
+    monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
+    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000")
+    monkeypatch.setenv("BLOCKCHAIN_ENABLED", "true")
+    monkeypatch.setenv("WALLET_ENCRYPTION_KEY", "rrt1JTM31Qti-wZodl2AGjLzwofE6S4XBvIymGgznz0=")
+    monkeypatch.setenv("BLOCKCHAIN_RPC_URL", "https://api-gateway.example.com")
+    monkeypatch.delenv("BLOCKCHAIN_PLATFORM_PRIVATE_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="BLOCKCHAIN_PLATFORM_PRIVATE_KEY"):
+        _validate_required_env_for_runtime()
+
+
 def test_validate_required_env_rejects_invalid_base_url(monkeypatch):
     monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
     monkeypatch.setenv("JWT_SECRET", "test-secret")

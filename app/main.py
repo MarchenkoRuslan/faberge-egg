@@ -257,6 +257,11 @@ def _validate_wallet_encryption_key(errors: list[str]) -> None:
             "BLOCKCHAIN_ENABLED=true requires WALLET_ENCRYPTION_KEY. "
             "Set WALLET_ENCRYPTION_KEY in environment.",
         )
+    if settings.BLOCKCHAIN_RPC_URL.strip() and not settings.BLOCKCHAIN_PLATFORM_PRIVATE_KEY.strip():
+        errors.append(
+            "BLOCKCHAIN_ENABLED=true with BLOCKCHAIN_RPC_URL (API-Gateway) "
+            "requires BLOCKCHAIN_PLATFORM_PRIVATE_KEY for transfer_fractions.",
+        )
 
 
 def _append_s3_startup_diagnostics(warnings: list[str]) -> None:

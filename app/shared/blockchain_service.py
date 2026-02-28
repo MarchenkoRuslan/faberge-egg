@@ -97,15 +97,31 @@ def get_blockchain_service() -> BlockchainService:
 
     When BLOCKCHAIN_ENABLED is False (or no real implementation is wired),
     returns a StubBlockchainService.
+    When BLOCKCHAIN_ENABLED and BLOCKCHAIN_RPC_URL are set, returns
+    SymbolBlockchainService that calls API-Gateway (requires
+    BLOCKCHAIN_PLATFORM_PRIVATE_KEY for transfer_fractions).
     """
     global _blockchain_service
     if _blockchain_service is not None:
         return _blockchain_service
 
-    if settings.BLOCKCHAIN_ENABLED and settings.BLOCKCHAIN_RPC_URL:
+    if settings.BLOCKCHAIN_ENABLED and settings.BLOCKCHAIN_RPC_URL.strip():
+        platform_key = settings.BLOCKCHAIN_PLATFORM_PRIVATE_KEY.strip()
+        if platform_key:
+            from app.shared.symbol_blockchain_service import SymbolBlockchainService
+
+            _blockchain_service = SymbolBlockchainService(
+                base_url=settings.BLOCKCHAIN_RPC_URL,
+                platform_private_key=platform_key,
+            )
+            logger.info(
+                "blockchain: using SymbolBlockchainService (API-Gateway at %s)",
+                settings.BLOCKCHAIN_RPC_URL,
+            )
+            return _blockchain_service
         logger.warning(
-            "BLOCKCHAIN_ENABLED=true but no real blockchain adapter is "
-            "registered yet; falling back to StubBlockchainService",
+            "BLOCKCHAIN_ENABLED=true and BLOCKCHAIN_RPC_URL set, but "
+            "BLOCKCHAIN_PLATFORM_PRIVATE_KEY is missing; falling back to StubBlockchainService",
         )
 
     _blockchain_service = StubBlockchainService()
