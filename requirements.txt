@@ -1,6 +1,6 @@
 fastapi>=0.129,<0.134
 starlette>=0.49.1  # CVE-2025-62727 DoS fix
-uvicorn[standard]==0.32.1
+uvicorn[standard]==0.41.0
 python-dotenv==1.0.1
 python-jose[cryptography]==3.5.0
 cryptography>=41.0.0
